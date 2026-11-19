@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <?!= incluirArquivoHtml('Styles/Estilos') ?>
+</head>
+<body>
+  <div class="topo"><h1>Férias</h1><small id="subtitulo"></small></div>
+
+  <div class="barra">
+  <label for="operacao">Operação</label>
+  <select id="operacao">
+    <option value="atualizar">Atualizar período de férias</option>
+    <option value="dividir">Dividir férias em 2 períodos (15 + 15)</option>
+    <option value="semdireito">Marcar sem direito a férias (ex.: contrato de 6 meses)</option>
+    <option value="restaurar">Restabelecer o direito a férias</option>
+  </select>
+  </div>
+
+  <div class="conteudo"><div class="cartao">
+
+  <div class="campo" data-ops="atualizar dividir">
+    <label for="periodo">Período</label>
+    <select id="periodo"></select>
+    <small id="dicaPeriodo"></small>
+  </div>
+
+  <div class="campo" data-ops="semdireito restaurar">
+    <label for="contratoSD">Contrato</label>
+    <select id="contratoSD"></select>
+    <small id="dicaSD"></small>
+  </div>
+
+  <div class="campo" data-ops="semdireito">
+    <label for="motivoSD">Motivo (opcional)</label>
+    <input type="text" id="motivoSD" placeholder="ex.: contrato de 6 meses">
+  </div>
+
+  <div class="campo" data-ops="atualizar">
+    <label for="status">Situação</label>
+    <select id="status"></select>
+    <div class="dica">
+      <b>Pendente</b>: ainda não conversei com a pessoa. <b>Aguardando</b>: já conversei e aguardo a resposta para negociar.
+      <b>Prevista</b>: combinado e programado (exige datas). <b>Tirada</b>: já realizado (só depois do fim das férias).
+      <b>Sem direito</b>: contrato sem direito a férias (limpa as datas).
+    </div>
+    <div class="row">
+      <div><label for="inicio">Início das férias</label><input type="date" id="inicio"></div>
+      <div><label for="fim">Fim das férias</label><input type="date" id="fim"></div>
+    </div>
+    <label for="observacoes">Observações</label>
+    <textarea id="observacoes"></textarea>
+  </div>
+
+  <div class="campo" data-ops="dividir">
+    <div class="dica">Cria o período 2º (sem datas) e marca "Deseja 15 dias" no 1º. As datas de cada um você define depois, na negociação.</div>
+  </div>
+  </div></div>
+
+  <div class="rodape">
+    <div id="msg"></div>
+    <div class="botoes">
+      <button class="s" id="fechar">Fechar</button>
+      <button class="p" id="salvar">Salvar</button>
+    </div>
+  </div>
+
+  <script>
+    var OPERACAO_INICIAL = <?!= JSON.stringify(operacaoInicial) ?>;
+    var dados = { status: {}, periodos: [], contratos: [], semVinculo: 0 };
+    var TEXTO_BOTAO = {
+      atualizar: 'Salvar', dividir: 'Dividir férias', semdireito: 'Marcar sem direito', restaurar: 'Restabelecer direito'
+    };
+    var DICAS = {
+      semdireito: 'Indicado para contratos de 6 meses. Períodos Pendente ou Aguardando passam para "Sem direito" (datas e dias são limpos). Não vale para contrato que já tem férias Prevista ou Tirada.',
+      restaurar: 'Os períodos "Sem direito" do contrato voltam para Pendente.'
+    };
+
+    function el(id) { return document.getElementById(id); }
+    function limpar(no) { while (no.firstChild) no.removeChild(no.firstChild); }
+    function opcao(valor, texto) {
+      var o = document.createElement('option');
+      o.value = valor;
+      o.textContent = texto;
+      return o;
+    }
+    function mensagem(texto, classe) {
+      var m = el('msg');
+      m.textContent = texto;
+      m.className = classe || '';
+    }
+    function brParaIso(br) {
+      var m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(br || '');
+      return m ? m[3] + '-' + m[2] + '-' + m[1] : '';
+    }
+    function operacaoAtual() { return el('operacao').value; }
+    function chave(p) { return p.idContrato + '|' + p.periodo; }
+    function porNome(a, b) { return a.nome.localeCompare(b.nome, 'pt-BR') || (a.periodo < b.periodo ? -1 : 1); }
+    function rotulo(p) {
+      return p.nome + ' — ' + p.periodo + ' · ' + (p.status || 'sem situação') + (p.inicio ? ' · ' + p.inicio + ' a ' + p.fim : '');
+    }
+    function rotuloContrato(c) {
+      return c.nome + ' — ' + c.idContrato + ' · ' + (c.meses ? c.meses + ' meses · ' : '') + c.status;
+    }
+
+    function listaDaOperacao() {
+      var op = operacaoAtual();
+      var s = dados.status;
+      var temSegundo = {};
+      dados.periodos.forEach(function (p) { if (p.periodo === '2º') temSegundo[p.idContrato] = true; });
+      return dados.periodos.filter(function (p) {
+        if (p.status === s.TIRADA && op === 'atualizar' && !p.corrigivel) return false; // já tirado: não editar (exceto engano: Tirada que ainda não terminou)
+        if (op === 'dividir') return p.periodo === '1º' && !temSegundo[p.idContrato] && p.status !== s.TIRADA && p.status !== s.SEM_DIREITO && p.contratoStatus !== 'Encerrado';
+        return true;
+      }).sort(porNome);
+    }
+
+    // contratos de 6 meses ou menos primeiro: são os candidatos mais prováveis a "sem direito"
+    function contratosDaOperacaoSD() {
+      var op = operacaoAtual();
+      var lista = dados.contratos.filter(function (c) { return op === 'semdireito' ? c.podeMarcarSemDireito : c.temSemDireito; });
+      return lista.sort(function (a, b) {
+        var ca = a.meses !== null && a.meses <= 6 ? 0 : 1, cb = b.meses !== null && b.meses <= 6 ? 0 : 1;
+        return ca - cb || a.nome.localeCompare(b.nome, 'pt-BR');
+      });
+    }
+
+    function preencherContratosSD() {
+      var op = operacaoAtual();
+      var lista = (op === 'semdireito' || op === 'restaurar') ? contratosDaOperacaoSD() : [];
+      limpar(el('contratoSD'));
+      if (!lista.length) el('contratoSD').appendChild(opcao('', '(nenhum contrato disponível para esta operação)'));
+      lista.forEach(function (c) { el('contratoSD').appendChild(opcao(c.idContrato, rotuloContrato(c))); });
+      el('dicaSD').textContent = DICAS[op] || '';
+    }
+
+    function preencherPeriodos() {
+      var lista = listaDaOperacao();
+      var anterior = el('periodo').value;
+      limpar(el('periodo'));
+      if (!lista.length) el('periodo').appendChild(opcao('', '(nenhum período disponível para esta operação)'));
+      lista.forEach(function (p) { el('periodo').appendChild(opcao(chave(p), rotulo(p))); });
+      if (anterior && lista.some(function (p) { return chave(p) === anterior; })) el('periodo').value = anterior;
+      aoMudarPeriodo();
+    }
+
+    function selecionado() {
+      var k = el('periodo').value;
+      return dados.periodos.filter(function (p) { return chave(p) === k; })[0] || null;
+    }
+
+    function aoMudarPeriodo() {
+      var p = selecionado();
+      var dica = '';
+      if (dados.semVinculo) dica = dados.semVinculo + ' período(s) sem contrato vinculado não aparecem aqui (corrija o ID do contrato na aba Férias). ';
+      if (p) {
+        if (p.contratoInicio) dica += 'Contrato: ' + p.contratoInicio + ' a ' + p.contratoFim + '. ';
+        el('status').value = p.status;
+        el('inicio').value = brParaIso(p.inicio);
+        el('fim').value = brParaIso(p.fim);
+        el('observacoes').value = p.observacoes;
+      }
+      el('dicaPeriodo').textContent = dica;
+    }
+
+    function aoMudarOperacao() {
+      var op = operacaoAtual();
+      var campos = document.querySelectorAll('.campo');
+      for (var i = 0; i < campos.length; i++) {
+        var ops = campos[i].getAttribute('data-ops').split(' ');
+        campos[i].className = 'campo' + (ops.indexOf(op) >= 0 ? '' : ' oculto');
+      }
+      el('salvar').textContent = TEXTO_BOTAO[op];
+      el('subtitulo').textContent = el('operacao').options[el('operacao').selectedIndex].text;
+      mensagem('');
+      preencherPeriodos();
+      preencherContratosSD();
+    }
+
+    function preencherStatus() {
+      limpar(el('status'));
+      el('status').appendChild(opcao('', '(sem situação)'));
+      ['PENDENTE', 'AGUARDANDO', 'PREVISTA', 'TIRADA', 'SEM_DIREITO'].forEach(function (k) {
+        if (dados.status[k]) el('status').appendChild(opcao(dados.status[k], dados.status[k]));
+      });
+    }
+
+    function salvar() {
+      var op = operacaoAtual();
+      var payload;
+      if (op === 'semdireito' || op === 'restaurar') {
+        if (!el('contratoSD').value) { mensagem('Escolha um contrato.', 'erro'); return; }
+        payload = { idContrato: el('contratoSD').value, motivo: el('motivoSD').value };
+      } else {
+        var p = selecionado();
+        if (!p) { mensagem('Escolha um período.', 'erro'); return; }
+        payload = { idContrato: p.idContrato, periodo: p.periodo };
+        if (op === 'atualizar') {
+          payload.dados = { STATUS: el('status').value, INICIO: el('inicio').value, FIM: el('fim').value, OBSERVACOES: el('observacoes').value };
+        }
+      }
+      el('salvar').disabled = true;
+      mensagem('Salvando...');
+      google.script.run
+        .withSuccessHandler(function (texto) {
+          mensagem(texto, 'ok');
+          el('salvar').disabled = false;
+          el('motivoSD').value = '';
+          carregar();
+        })
+        .withFailureHandler(function (erro) {
+          mensagem(erro && erro.message ? erro.message : String(erro), 'erro');
+          el('salvar').disabled = false;
+        })
+        .executarOperacaoDeFeriasDoDialogo(op, payload);
+    }
+
+    function carregar(primeira) {
+      google.script.run
+        .withSuccessHandler(function (d) {
+          dados = d;
+          preencherStatus();
+          if (primeira) aoMudarOperacao(); else { preencherPeriodos(); preencherContratosSD(); }
+        })
+        .withFailureHandler(function (erro) { mensagem(erro && erro.message ? erro.message : String(erro), 'erro'); })
+        .obterDadosDoDialogoDeFerias();
+    }
+
+    el('operacao').addEventListener('change', aoMudarOperacao);
+    el('periodo').addEventListener('change', aoMudarPeriodo);
+    el('salvar').addEventListener('click', salvar);
+    el('fechar').addEventListener('click', function () { google.script.host.close(); });
+    el('operacao').value = OPERACAO_INICIAL;
+    mensagem('Carregando...');
+    carregar(true);
+  </script>
+</body>
+</html>

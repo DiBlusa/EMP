@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lista de Presença</title>
+  <?!= incluirArquivoHtml('Styles/PresencaEstilos') ?>
+</head>
+<body>
+  <!-- cabeçalho institucional (mesmos textos da Consulta: CONFIG.CONSULTA) -->
+  <header class="topo">
+    <div class="marca">
+      <h1 id="instTitulo">Gestão de Estagiários e Funcionários</h1>
+      <div class="orgao"><span data-icone="predio"></span><span id="instOrgao"></span><span>•</span><span id="instSetor"></span></div>
+    </div>
+    <div class="info">
+      <div><b>Atualizado em:</b> <span id="atualizadoEm">—</span></div>
+      <div><span class="ponto carregando" id="pontoStatus"></span><b id="textoStatus">Carregando dados</b></div>
+      <button type="button" class="auto" id="atualizarAgora" title="Clique para atualizar agora">Atualização automática a cada <span id="minAuto">5</span> min</button>
+    </div>
+  </header>
+
+  <main class="principal" id="principal">
+    <div class="titulo">
+      <span data-icone="calendario"></span>
+      <div><h2>Lista de Presença</h2><p>Acompanhe a presença dos funcionários durante a semana</p></div>
+    </div>
+
+    <section class="kpis" aria-label="Indicadores">
+      <div class="kpi total"><span class="icone" data-icone="pessoas"></span><div><b id="kTotal">—</b><span>Funcionários</span></div></div>
+      <div class="kpi presentes"><span class="icone" data-icone="check"></span><div><b id="kPresentes">—</b><span id="kPresentesRot">Presentes hoje</span></div></div>
+      <div class="kpi ausentes"><span class="icone" data-icone="xis"></span><div><b id="kAusentes">—</b><span id="kAusentesRot">Ausentes hoje</span></div></div>
+      <div class="kpi pendentes"><span class="icone" data-icone="relogio"></span><div><b id="kPendentes">—</b><span id="kPendentesRot">Pendentes</span></div></div>
+      <div class="kpi taxa"><span class="icone" data-icone="pizza"></span><div><b id="kTaxa">—</b><span>Taxa de presença</span></div></div>
+    </section>
+
+    <section class="barra" aria-label="Navegação e filtros">
+      <button type="button" class="caixa btn-icone" id="semanaAnterior" title="Semana anterior" data-icone="esquerda"></button>
+      <div class="caixa semana">
+        <span data-icone="calendarioPequeno"></span>
+        <select id="seletorSemana" aria-label="Selecionar semana"></select>
+        <span class="seta" data-icone="baixo"></span>
+      </div>
+      <button type="button" class="caixa btn-icone" id="semanaProxima" title="Próxima semana" data-icone="direita"></button>
+      <button type="button" class="btn-pri" id="semanaAtual"><span data-icone="calendarioPequeno"></span>Semana Atual</button>
+      <span class="sep"></span>
+      <label for="busca">Filtro por Funcionário:</label>
+      <div class="caixa busca"><input type="text" id="busca" placeholder="Digite o nome..." autocomplete="off"><span data-icone="lupa"></span></div>
+      <label for="fSituacao" id="rotSituacao">Situação:</label>
+      <select class="filtro" id="fSituacao"><option value="">Todas</option></select>
+      <button type="button" class="btn-sec direita" id="abrirHistorico"><span data-icone="atualizar"></span>Ver Histórico</button>
+    </section>
+
+    <section class="barra2" aria-label="Mais filtros e ações">
+      <label for="fVinculo">Vínculo:</label>
+      <select class="filtro pequeno" id="fVinculo"><option value="">Todos</option></select>
+      <label for="fSetor">Setor:</label>
+      <select class="filtro pequeno" id="fSetor"><option value="">Todos</option></select>
+      <span class="ocultos" id="ocultos"></span>
+      <button type="button" class="btn-sec pequeno" id="abrirAcoes"><span data-icone="raio"></span>Ações rápidas<span data-icone="baixo"></span></button>
+    </section>
+
+    <div class="aviso" id="aviso"><span data-icone="info"></span><span id="avisoTexto"></span><button type="button" id="avisoBotao" hidden>Permitir edição</button></div>
+
+    <div class="tabela-caixa" id="tabelaCaixa">
+      <table class="semana-tab" id="tabela">
+        <thead><tr id="cabecalho"></tr></thead>
+        <tbody id="corpo"><tr><td class="vazio-tab" colspan="9">Carregando...</td></tr></tbody>
+      </table>
+    </div>
+  </main>
+
+  <!-- alterações ainda não salvas -->
+  <div class="pendencias" id="pendencias" role="status">
+    <span data-icone="lapis"></span>
+    <span class="qtd" id="pendQtd"></span>
+    <span class="msg" id="pendMsg">As alterações só valem depois de salvas.</span>
+    <div class="direita">
+      <button type="button" class="btn-sec" id="desfazer"><span data-icone="desfazer"></span>Desfazer alterações</button>
+      <button type="button" class="btn-pri" id="salvar"><span data-icone="salvar"></span>Salvar registros</button>
+    </div>
+  </div>
+
+  <footer class="rodape">
+    <div class="legenda" id="legenda"></div>
+    <div class="ultima"><span data-icone="info"></span><span id="ultimaAtualizacao">Carregando...</span></div>
+    <button type="button" class="btn-pri" id="exportar"><span data-icone="baixar"></span>Exportar Relatório</button>
+  </footer>
+
+  <!-- menus suspensos (editor da célula, ações em massa, menu da linha) -->
+  <div class="suspenso editor" id="editor" role="dialog" aria-label="Registrar presença"></div>
+  <div class="suspenso" id="menuAcoes"></div>
+  <div class="suspenso" id="menuLinha"></div>
+
+  <!-- janelas -->
+  <div class="fundo" id="fundoConfirmar">
+    <div class="janela" role="dialog" aria-modal="true">
+      <header><span data-icone="salvar"></span><h3 id="confTitulo">Confirmar</h3><button type="button" class="fechar" data-fechar="fundoConfirmar" aria-label="Fechar">×</button></header>
+      <div class="corpo" id="confCorpo"></div>
+      <footer><button type="button" class="btn-pequeno" data-fechar="fundoConfirmar">Cancelar</button><button type="button" class="btn-pequeno pri" id="confOk">Confirmar</button></footer>
+    </div>
+  </div>
+
+  <div class="fundo" id="fundoHistorico">
+    <div class="janela larga" role="dialog" aria-modal="true">
+      <header><span data-icone="atualizar"></span><h3>Histórico de presença</h3><button type="button" class="fechar" data-fechar="fundoHistorico" aria-label="Fechar">×</button></header>
+      <div class="corpo">
+        <div class="filtros-hist">
+          <div><label for="hPessoa">Funcionário</label><select id="hPessoa"><option value="">Todos</option></select></div>
+          <div><label for="hInicio">De</label><input type="date" id="hInicio"></div>
+          <div><label for="hFim">Até</label><input type="date" id="hFim"></div>
+          <button type="button" class="btn-pequeno pri" id="hConsultar">Consultar</button>
+          <button type="button" class="btn-pequeno" id="hIrSemana" title="Abrir a semana da data inicial na lista">Abrir a semana na lista</button>
+          <span class="so-leitura"><span data-icone="cadeado"></span>Somente consulta: nada é alterado aqui.</span>
+        </div>
+        <div id="hResultado"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="alert"></div>
+
+  <?!= incluirArquivoHtml('UI/PresencaScript') ?>
+</body>
+</html>

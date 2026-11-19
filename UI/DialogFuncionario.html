@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <?!= incluirArquivoHtml('Styles/Estilos') ?>
+</head>
+<body>
+  <div class="topo"><h1>Funcionários</h1><small id="subtitulo"></small></div>
+
+  <div class="barra">
+  <label for="operacao">Operação</label>
+  <select id="operacao">
+    <option value="cadastrar">Cadastrar funcionário</option>
+    <option value="renovar">Renovar contrato</option>
+    <option value="alterar">Alterar dados do contrato</option>
+    <option value="nome">Alterar nome</option>
+    <option value="suspender">Suspender contrato</option>
+    <option value="reativar">Reativar contrato</option>
+    <option value="desativar">Desativar (encerrar) contrato</option>
+  </select>
+  </div>
+
+  <div class="conteudo"><div class="cartao">
+  <div class="campo" data-ops="cadastrar">
+    <label for="nome">Nome completo</label>
+    <input type="text" id="nome">
+  </div>
+
+  <div class="campo" data-ops="nome">
+    <label for="pessoa">Funcionário</label>
+    <select id="pessoa"></select>
+    <label for="novoNome">Novo nome completo</label>
+    <input type="text" id="novoNome">
+  </div>
+
+  <div class="campo" data-ops="alterar renovar suspender reativar desativar">
+    <label for="contrato">Contrato</label>
+    <select id="contrato"></select>
+    <small id="dicaContrato"></small>
+  </div>
+
+  <div class="campo" data-ops="cadastrar alterar renovar">
+    <label for="vinculo">Tipo de vínculo</label>
+    <select id="vinculo"></select>
+    <div class="row">
+      <div><label for="cargo">Cargo</label><input type="text" id="cargo" list="listaCargos"></div>
+      <div><label for="setor">Setor</label><input type="text" id="setor" list="listaSetores"></div>
+    </div>
+    <datalist id="listaCargos"></datalist>
+    <datalist id="listaSetores"></datalist>
+    <div class="row">
+      <div><label for="inicio">Início do contrato</label><input type="date" id="inicio"></div>
+      <div><label for="fim">Fim do contrato</label><input type="date" id="fim"></div>
+    </div>
+    <small>Deixe as duas datas em branco se o vínculo não tiver datas (PSS, Cargo).</small>
+  </div>
+
+  <div class="campo" data-ops="desativar">
+    <label for="desligamento">Data de desligamento</label>
+    <input type="date" id="desligamento">
+    <div class="dica">O fim do contrato não é alterado. <b>Desativar é definitivo.</b></div>
+  </div>
+
+  <div class="campo" data-ops="suspender desativar">
+    <label for="motivo">Motivo (opcional)</label>
+    <input type="text" id="motivo">
+  </div>
+
+  <div class="campo" data-ops="cadastrar alterar renovar">
+    <label for="observacoes">Observações</label>
+    <textarea id="observacoes"></textarea>
+  </div>
+  </div></div>
+
+  <div class="rodape">
+    <div id="msg"></div>
+    <div class="botoes">
+      <button class="s" id="fechar">Fechar</button>
+      <button class="p" id="salvar">Salvar</button>
+    </div>
+  </div>
+
+  <script>
+    var OPERACAO_INICIAL = <?!= JSON.stringify(operacaoInicial) ?>;
+    var dados = { vinculos: [], cargos: [], setores: [], status: {}, contratos: [] };
+    var TEXTO_BOTAO = {
+      cadastrar: 'Cadastrar', renovar: 'Renovar', alterar: 'Salvar alterações', nome: 'Alterar nome',
+      suspender: 'Suspender', reativar: 'Reativar', desativar: 'Desativar'
+    };
+
+    function el(id) { return document.getElementById(id); }
+    function limpar(no) { while (no.firstChild) no.removeChild(no.firstChild); }
+    function opcao(valor, texto) {
+      var o = document.createElement('option');
+      o.value = valor;
+      o.textContent = texto;
+      return o;
+    }
+    function mensagem(texto, classe) {
+      var m = el('msg');
+      m.textContent = texto;
+      m.className = classe || '';
+    }
+    function brParaIso(br) {
+      var m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(br || '');
+      return m ? m[3] + '-' + m[2] + '-' + m[1] : '';
+    }
+    function hojeIso() {
+      var d = new Date();
+      var p = function (n) { return (n < 10 ? '0' : '') + n; };
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+    }
+    function operacaoAtual() { return el('operacao').value; }
+
+    // situações aceitas por operação (null = qualquer)
+    function statusPermitidos(op) {
+      var s = dados.status;
+      if (op === 'suspender') return [s.ATIVO];
+      if (op === 'reativar') return [s.SUSPENSO];
+      if (op === 'desativar') return [s.ATIVO, s.SUSPENSO];
+      return null;
+    }
+    function rotuloContrato(c) {
+      return c.nome + ' — ' + c.id + ' · ' + c.status + ' · ' + c.vinculo + (c.inicio ? ' · ' + c.inicio + ' a ' + c.fim : '');
+    }
+    function porNome(a, b) { return a.nome.localeCompare(b.nome, 'pt-BR') || (a.id < b.id ? -1 : 1); }
+
+    function preencherListas() {
+      limpar(el('vinculo'));
+      dados.vinculos.forEach(function (v) { el('vinculo').appendChild(opcao(v, v)); });
+      [['listaCargos', dados.cargos], ['listaSetores', dados.setores]].forEach(function (par) {
+        limpar(el(par[0]));
+        par[1].forEach(function (v) { el(par[0]).appendChild(opcao(v, v)); });
+      });
+    }
+
+    function preencherContratos() {
+      var op = operacaoAtual();
+      var permitidos = statusPermitidos(op);
+      var lista = dados.contratos.filter(function (c) { return !permitidos || permitidos.indexOf(c.status) >= 0; }).sort(porNome);
+      limpar(el('contrato'));
+      if (!lista.length) el('contrato').appendChild(opcao('', '(nenhum contrato disponível para esta operação)'));
+      lista.forEach(function (c) { el('contrato').appendChild(opcao(c.id, rotuloContrato(c))); });
+
+      var vistos = {};
+      limpar(el('pessoa'));
+      dados.contratos.slice().sort(porNome).forEach(function (c) {
+        if (vistos[c.idFuncionario]) return;
+        vistos[c.idFuncionario] = true;
+        el('pessoa').appendChild(opcao(c.idFuncionario, c.nome + ' — ' + c.idFuncionario));
+      });
+      aoMudarContrato();
+    }
+
+    function contratoSelecionado() {
+      var id = el('contrato').value;
+      return dados.contratos.filter(function (c) { return c.id === id; })[0] || null;
+    }
+
+    function aoMudarContrato() {
+      var op = operacaoAtual();
+      var c = contratoSelecionado();
+      el('dicaContrato').textContent = '';
+      if (!c) return;
+      if (op === 'alterar') {
+        el('vinculo').value = c.vinculo;
+        el('cargo').value = c.cargo;
+        el('setor').value = c.setor;
+        el('inicio').value = brParaIso(c.inicio);
+        el('fim').value = brParaIso(c.fim);
+        el('observacoes').value = c.observacoes;
+      } else if (op === 'renovar') {
+        el('vinculo').value = c.vinculo;
+        el('cargo').value = c.cargo;
+        el('setor').value = c.setor;
+        el('inicio').value = '';
+        el('fim').value = '';
+        el('observacoes').value = '';
+        el('dicaContrato').textContent = c.fim ? 'Fim do contrato atual: ' + c.fim + '. O novo deve começar a partir dessa data.' : '';
+      }
+    }
+
+    function aoMudarOperacao() {
+      var op = operacaoAtual();
+      var campos = document.querySelectorAll('.campo');
+      for (var i = 0; i < campos.length; i++) {
+        var ops = campos[i].getAttribute('data-ops').split(' ');
+        campos[i].className = 'campo' + (ops.indexOf(op) >= 0 ? '' : ' oculto');
+      }
+      el('salvar').textContent = TEXTO_BOTAO[op];
+      el('subtitulo').textContent = el('operacao').options[el('operacao').selectedIndex].text;
+      el('desligamento').value = hojeIso();
+      if (op === 'cadastrar') {
+        ['nome', 'cargo', 'setor', 'inicio', 'fim', 'observacoes'].forEach(function (id) { el(id).value = ''; });
+      }
+      mensagem('');
+      preencherContratos();
+    }
+
+    function montarPayload(op) {
+      var campos = {
+        VINCULO: el('vinculo').value, CARGO: el('cargo').value, SETOR: el('setor').value,
+        INICIO: el('inicio').value, FIM: el('fim').value, OBSERVACOES: el('observacoes').value
+      };
+      if (op === 'cadastrar') { campos.NOME = el('nome').value; return { campos: campos }; }
+      if (op === 'alterar' || op === 'renovar') return { idContrato: el('contrato').value, campos: campos };
+      if (op === 'nome') return { idFuncionario: el('pessoa').value, novoNome: el('novoNome').value };
+      if (op === 'suspender') return { idContrato: el('contrato').value, motivo: el('motivo').value };
+      if (op === 'desativar') return { idContrato: el('contrato').value, motivo: el('motivo').value, data: el('desligamento').value };
+      return { idContrato: el('contrato').value };
+    }
+
+    function salvar() {
+      var op = operacaoAtual();
+      if (op === 'desativar') {
+        var c = contratoSelecionado();
+        if (!c || !window.confirm('Desativar o contrato de ' + c.nome + ' (' + c.id + ')? Isso é definitivo.')) return;
+      }
+      el('salvar').disabled = true;
+      mensagem('Salvando...');
+      google.script.run
+        .withSuccessHandler(function (texto) {
+          mensagem(texto, 'ok');
+          el('salvar').disabled = false;
+          carregar(function () {
+            if (op === 'cadastrar') ['nome', 'cargo', 'setor', 'inicio', 'fim', 'observacoes'].forEach(function (id) { el(id).value = ''; });
+            if (op === 'nome') el('novoNome').value = '';
+          });
+        })
+        .withFailureHandler(function (erro) {
+          mensagem(erro && erro.message ? erro.message : String(erro), 'erro');
+          el('salvar').disabled = false;
+        })
+        .executarOperacaoDoDialogo(op, montarPayload(op));
+    }
+
+    function carregar(depois) {
+      google.script.run
+        .withSuccessHandler(function (d) {
+          dados = d;
+          preencherListas();
+          preencherContratos();
+          if (depois) depois();
+        })
+        .withFailureHandler(function (erro) { mensagem(erro && erro.message ? erro.message : String(erro), 'erro'); })
+        .obterDadosDoDialogo();
+    }
+
+    el('operacao').addEventListener('change', aoMudarOperacao);
+    el('contrato').addEventListener('change', aoMudarContrato);
+    el('salvar').addEventListener('click', salvar);
+    el('fechar').addEventListener('click', function () { google.script.host.close(); });
+    el('operacao').value = OPERACAO_INICIAL;
+    mensagem('Carregando...');
+    google.script.run
+      .withSuccessHandler(function (d) { dados = d; preencherListas(); aoMudarOperacao(); })
+      .withFailureHandler(function (erro) { mensagem(erro && erro.message ? erro.message : String(erro), 'erro'); })
+      .obterDadosDoDialogo();
+  </script>
+</body>
+</html>

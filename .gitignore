@@ -1,0 +1,10 @@
+# Configuração local do clasp (contém o ID do seu script)
+.clasp.json
+.clasprc.json
+
+# Sistema / editor
+node_modules/
+.DS_Store
+Thumbs.db
+.vscode/
+*.log

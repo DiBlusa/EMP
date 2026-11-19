@@ -1,0 +1,919 @@
+<script>
+  /* Lista de presença — visão semanal. Dados: obterSemanaDaPresenca(); gravação: salvarPresencasDaSemanaDoDialogo().
+     Nada é gravado sem o botão "Salvar registros". "Pendente" é calculado (dia de trabalho já chegou e sem registro). */
+  (function () {
+    'use strict';
+
+    /* ===================== ícones (SVG fixos; nunca recebem dados) ===================== */
+    var SVG = {
+      predio: '<path d="M3 21h18M5 21V10M19 21V10M9.5 21V10M14.5 21V10M2 10l10-6 10 6"/>',
+      calendario: '<rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M7.5 14h1M11.5 14h1M15.5 14h1M7.5 17.5h1M11.5 17.5h1M15.5 17.5h1" stroke-width="2.6"/>',
+      calendarioPequeno: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 14h2M12 14h2M8 17h2"/>',
+      pessoas: { fill: '<circle cx="9" cy="7.5" r="4"/><path d="M1.5 20.5c0-4.3 3.4-7 7.5-7s7.5 2.7 7.5 7z"/><circle cx="17.2" cy="8.6" r="3.1"/><path d="M17.6 13.6c3.1.2 5.2 2.3 5.2 6.1h-4.6c0-2.4-.4-4.4-.6-6.1z"/>' },
+      check: '<path d="M5 12.5l4.5 4.5L19 7.5" stroke-width="3.2"/>',
+      xis: '<path d="M7 7l10 10M17 7L7 17" stroke-width="3.2"/>',
+      relogio: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>',
+      pizza: { fill: '<path d="M11 2.6A9.6 9.6 0 1 0 21.4 13H11z"/><path d="M13 1.6V11h9.4A9.6 9.6 0 0 0 13 1.6z"/>' },
+      esquerda: '<path d="M15 18l-6-6 6-6"/>', direita: '<path d="M9 18l6-6-6-6"/>', baixo: '<path d="M6 9l6 6 6-6"/>',
+      lupa: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+      atualizar: '<path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/>',
+      raio: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+      info: '<circle cx="12" cy="12" r="9.5"/><path d="M12 11v6M12 7.4v.2" stroke-width="2.4"/>',
+      lapis: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+      desfazer: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
+      salvar: '<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h8V3M8 21v-7h8v7"/>',
+      baixar: '<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>',
+      cadeado: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+      pontos: { fill: '<circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/>' },
+      okCirculo: { fill: '<circle cx="12" cy="12" r="10"/><path d="M7 12.3l3.3 3.2L17 8.8" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>' },
+      xisCirculo: { fill: '<circle cx="12" cy="12" r="10"/><path d="M8.3 8.3l7.4 7.4M15.7 8.3l-7.4 7.4" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>' },
+      aviao: { fill: '<path d="M21.5 15.5v-2L13.5 9V4a1.5 1.5 0 0 0-3 0v5l-8 4.5v2l8-2.2V18l-2 1.5V21l3.5-1 3.5 1v-1.5l-2-1.5v-4.7z"/>' },
+      documento: '<path d="M6 2.5h9l4.5 4.5v14.5H6z"/><path d="M14.5 2.5V7.5h5M9 13h7.5M9 16.5h5.5"/>',
+      lua: '<path d="M20.5 13.2A8.5 8.5 0 1 1 10.8 3.5a6.6 6.6 0 0 0 9.7 9.7z"/>',
+      pessoaHist: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/>'
+    };
+    function icone(nome, classe) {
+      var d = SVG[nome];
+      if (!d) return '';
+      var cheio = typeof d === 'object';
+      return '<svg class="ico' + (classe ? ' ' + classe : '') + '" viewBox="0 0 24 24" aria-hidden="true" ' +
+        (cheio ? 'fill="currentColor" stroke="none">' + d.fill : 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + d) + '</svg>';
+    }
+
+    /* ===================== situações ===================== */
+    var PENDENTE = 'Pendente';
+    var CLASSE = { 'Presente': 'presente', 'Ausente': 'ausente', 'Atrasado': 'atrasado', 'Justificado': 'justificado', 'Férias': 'ferias', 'Folga': 'folga', 'Pendente': 'pendente' };
+    var ICONE_STATUS = { 'Presente': 'okCirculo', 'Ausente': 'xisCirculo', 'Atrasado': 'relogio', 'Justificado': 'documento', 'Férias': 'aviao', 'Folga': 'lua', 'Pendente': 'relogio' };
+    var PRESENTES = ['Presente', 'Atrasado'];
+    var AUSENTES = ['Ausente', 'Justificado'];
+    var EXIBICAO_VINCULO = { 'Estágio': 'Estagiário' };
+
+    /* ===================== estado ===================== */
+    var dados = null;          // resposta do servidor para a semana
+    var carregadoEm = 0;       // Date.now() da última carga (o relógio do servidor avança a partir daqui)
+    var refIdx = -1;           // dia de referência (indicadores, filtro de situação e ações em massa)
+    var edicaoLiberada = false; // semanas anteriores começam protegidas
+    var alteracoes = {};       // 'FUNC-0001|2026-11-12' -> { status, observacao, horaChegada }
+    var salvando = false;
+    var carregando = false;
+    var pessoasHistorico = null;
+
+    /* ===================== utilitários ===================== */
+    function el(id) { return document.getElementById(id); }
+    function novo(tag, classe, texto) {
+      var e = document.createElement(tag);
+      if (classe) e.className = classe;
+      if (texto !== undefined && texto !== null) e.textContent = texto;
+      return e;
+    }
+    function limpar(no) { while (no.firstChild) no.removeChild(no.firstChild); }
+    function dois(n) { return (n < 10 ? '0' : '') + n; }
+    function isoDe(d) { return d.getFullYear() + '-' + dois(d.getMonth() + 1) + '-' + dois(d.getDate()); }
+    function dataDe(iso) { var p = iso.split('-'); return new Date(+p[0], +p[1] - 1, +p[2], 12); }
+    function somarDias(iso, n) { var d = dataDe(iso); d.setDate(d.getDate() + n); return isoDe(d); }
+    function br(iso) { var p = iso.split('-'); return p[2] + '/' + p[1] + '/' + p[0]; }
+    function brCurto(iso) { var p = iso.split('-'); return p[2] + '/' + p[1]; }
+    function segundaDe(iso) { var d = dataDe(iso); var w = d.getDay(); d.setDate(d.getDate() + (w === 0 ? -6 : 1 - w)); return isoDe(d); }
+    function minutos(hhmm) { var p = String(hhmm).split(':'); return (+p[0]) * 60 + (+p[1]); }
+    function duracao(m) { var h = Math.floor(m / 60), r = m % 60; return h ? h + 'h' + (r ? ' ' + r + 'min' : '') : r + 'min'; }
+    function erroTexto(e) { return String(e && e.message ? e.message : e).replace(/^Exception:\s*/, ''); }
+    function chave(l, i) { return l.idFuncionario + '|' + dados.dias[i].iso; }
+    function vinculoExibido(v) { return EXIBICAO_VINCULO[v] || v; }
+    function preencherIcones(raiz) {
+      Array.prototype.forEach.call((raiz || document).querySelectorAll('[data-icone]'), function (n) {
+        if (!n.dataset.iconeOk) { n.insertAdjacentHTML('afterbegin', icone(n.getAttribute('data-icone'))); n.dataset.iconeOk = '1'; }
+      });
+    }
+
+    var temporizadorToast = null;
+    function avisar(texto, tipo) {
+      var t = el('toast');
+      t.textContent = texto;
+      t.className = 'toast mostrar' + (tipo ? ' ' + tipo : '');
+      clearTimeout(temporizadorToast);
+      temporizadorToast = setTimeout(function () { t.className = 'toast'; }, tipo === 'erro' ? 9000 : 4500);
+    }
+
+    function statusDoTopo(texto, classe) {
+      el('textoStatus').textContent = texto;
+      el('pontoStatus').className = 'ponto' + (classe ? ' ' + classe : '');
+    }
+
+    /* ===================== regras da célula ===================== */
+    function agoraMinutos() { return dados.agoraMinutos + Math.floor((Date.now() - carregadoEm) / 60000); }
+    function indiceDeHoje() { for (var i = 0; i < dados.dias.length; i++) if (dados.dias[i].hoje) return i; return -1; }
+    /** Semana anterior à atual (no sábado e no domingo, a semana atual continua sendo a de segunda a sexta que passou). */
+    function semanaAnterior() { return dados.segundaIso < segundaDe(dados.hojeIso); }
+    function semanaFutura() { return dados.segundaIso > segundaDe(dados.hojeIso); }
+
+    function original(l, i) {
+      var r = l.dias[i].registro;
+      return r ? { status: r.status, observacao: r.observacao, horaChegada: r.horaChegada || '' } : { status: '', observacao: '', horaChegada: '' };
+    }
+    function valor(l, i) { return alteracoes[chave(l, i)] || original(l, i); }
+    function alterada(l, i) { return !!alteracoes[chave(l, i)]; }
+
+    /** Dia sem expediente: a pessoa tem horário cadastrado, mas não nesse dia. */
+    function semExpediente(l, i) { var c = l.dias[i]; return l.temHorario && !c.jornada; }
+    /** A pessoa devia trabalhar no dia (conta nos indicadores e pode ficar Pendente). */
+    function esperado(l, i) { var c = l.dias[i]; return c.ativo && !c.ferias && !semExpediente(l, i); }
+
+    /** Situação exibida: a registrada (ou alterada), Férias da aba Férias, Pendente calculado, ou nada. */
+    function situacao(l, i) {
+      var v = valor(l, i), c = l.dias[i], d = dados.dias[i];
+      if (v.status) return v.status;
+      if (c.ferias) return 'Férias';
+      if (esperado(l, i) && !d.futuro) return PENDENTE;
+      return '';
+    }
+
+    function semanaEditavel() { return !semanaAnterior() || edicaoLiberada; }
+    function podeEditar(l, i) {
+      var c = l.dias[i], d = dados.dias[i];
+      return dados.podeEditar && semanaEditavel() && c.ativo && !c.ferias && (!d.futuro || dados.permitirDataFutura);
+    }
+
+    function motivoTravada(l, i) {
+      var c = l.dias[i], d = dados.dias[i];
+      if (!dados.podeEditar) return dados.motivoSemEdicao || 'Sem permissão para lançar presença.';
+      if (c.ferias) return 'Férias cadastradas na aba Férias: não recebe lançamento.';
+      if (!c.ativo) return 'Sem contrato válido nesta data.';
+      if (d.futuro && !dados.permitirDataFutura) return 'Data futura: ainda não é possível lançar.';
+      if (!semanaEditavel()) return 'Semana anterior protegida. Use "Permitir edição" para alterar.';
+      return '';
+    }
+
+    function atrasoDe(l, i, v) {
+      if (v.status !== dados.statusAtrasado || !v.horaChegada) return '';
+      var r = l.dias[i].registro;
+      if (!alterada(l, i) && r) return r.atrasoMin;
+      var j = l.dias[i].jornada;
+      if (!j) return '';
+      var m = minutos(v.horaChegada) - minutos(j.de);
+      return m > 0 ? m : '';
+    }
+
+    /* ===================== filtros ===================== */
+    function passaFiltrosBase(l) {
+      var t = el('busca').value.trim().toLowerCase();
+      if (t && l.nome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').indexOf(t.normalize('NFD').replace(/[̀-ͯ]/g, '')) < 0) return false;
+      if (el('fVinculo').value && l.vinculo !== el('fVinculo').value) return false;
+      if (el('fSetor').value && l.setor !== el('fSetor').value) return false;
+      return true;
+    }
+    function visivel(l) {
+      if (!passaFiltrosBase(l)) return false;
+      var f = el('fSituacao').value;
+      if (!f || refIdx < 0) return true;
+      return situacao(l, refIdx) === f;
+    }
+
+    /* ===================== desenho ===================== */
+    function preencherSelect(id, rotuloTodos, valores, exibir) {
+      var s = el(id), atual = s.value;
+      limpar(s);
+      var o = novo('option', '', rotuloTodos); o.value = ''; s.appendChild(o);
+      valores.forEach(function (v) { var x = novo('option', '', exibir ? exibir(v) : v); x.value = v; s.appendChild(x); });
+      s.value = valores.indexOf(atual) >= 0 ? atual : '';
+    }
+
+    function montarSeletorDeSemana() {
+      var s = el('seletorSemana');
+      limpar(s);
+      var ano = +dados.segundaIso.substring(0, 4);
+      var atual = segundaDe(dados.hojeIso);
+      var m = segundaDe(ano + '-01-01');
+      if (+m.substring(0, 4) < ano && somarDias(m, 4).substring(0, 4) < String(ano)) m = somarDias(m, 7);
+      for (var n = 0; n < 54; n++) {
+        if (+m.substring(0, 4) > ano) break;
+        var o = novo('option', '', 'Semana de ' + br(m) + ' a ' + br(somarDias(m, 4)));
+        o.value = m;
+        if (m === atual) o.style.fontWeight = '700'; // semana atual em destaque na lista
+        s.appendChild(o);
+        m = somarDias(m, 7);
+      }
+      if (!Array.prototype.some.call(s.options, function (o) { return o.value === dados.segundaIso; })) {
+        var extra = novo('option', '', 'Semana de ' + br(dados.segundaIso) + ' a ' + br(dados.sextaIso)); extra.value = dados.segundaIso; s.insertBefore(extra, s.firstChild);
+      }
+      s.value = dados.segundaIso;
+    }
+
+    function montarCabecalho() {
+      var tr = el('cabecalho');
+      limpar(tr);
+      var th0 = novo('th'); th0.insertAdjacentHTML('beforeend', '<span class="cab">' + icone('pessoas') + '<span>Funcionário</span></span>'); tr.appendChild(th0);
+      dados.dias.forEach(function (d, i) {
+        var th = novo('th', 'dia' + (i === refIdx ? ' ref' : '') + (d.hoje ? ' hoje' : ''));
+        th.appendChild(document.createTextNode(d.sigla));
+        th.appendChild(novo('small', '', brCurto(d.iso)));
+        th.title = d.nome + ', ' + br(d.iso) + (d.hoje ? ' (hoje)' : '') + ' — clique para usar este dia nos indicadores, no filtro de situação e nas ações';
+        th.addEventListener('click', function () { refIdx = i; desenharTudo(); });
+        tr.appendChild(th);
+      });
+      var t = novo('th', 'tempo'); t.insertAdjacentHTML('beforeend', '<span class="cab">' + icone('relogio') + '<span>Tempo Restante</span></span>'); tr.appendChild(t);
+      var o = novo('th', 'obs'); o.insertAdjacentHTML('beforeend', '<span class="cab">' + icone('documento') + '<span>Observações</span></span>'); tr.appendChild(o);
+      tr.appendChild(novo('th', 'menu'));
+    }
+
+    function chipDaCelula(l, i) {
+      var s = situacao(l, i), v = valor(l, i), d = dados.dias[i];
+      var editavel = podeEditar(l, i);
+      var b = novo('button', 'chip ' + (s ? 's-' + CLASSE[s] : 's-nada') + (alterada(l, i) ? ' alterada' : '') + (editavel ? '' : ' travada'));
+      b.type = 'button';
+      if (s) {
+        b.insertAdjacentHTML('beforeend', icone(ICONE_STATUS[s]));
+        b.appendChild(novo('span', '', s));
+        var atraso = atrasoDe(l, i, v);
+        if (s === dados.statusAtrasado && atraso !== '') b.appendChild(novo('small', '', '+' + duracao(atraso)));
+      } else {
+        b.appendChild(novo('span', '', '—'));
+      }
+      var dicas = [d.nome + ', ' + br(d.iso)];
+      if (s === PENDENTE) dicas.push('Sem registro: clique para marcar.');
+      if (!s && semExpediente(l, i)) dicas.push('Sem expediente neste dia (aba Horários).');
+      if (v.horaChegada && s === dados.statusAtrasado) dicas.push('Chegada às ' + v.horaChegada);
+      if (v.observacao) dicas.push('Obs.: ' + v.observacao);
+      if (alterada(l, i)) dicas.push('Alteração ainda não salva.');
+      var trava = editavel ? '' : motivoTravada(l, i);
+      if (trava) dicas.push(trava);
+      b.title = dicas.join('\n');
+      b.addEventListener('click', function (ev) { ev.stopPropagation(); abrirEditor(l, i, b); });
+      return b;
+    }
+
+    /** Coluna "Tempo restante": só para o dia de hoje; a saída é a combinada mesmo com atraso. */
+    function tempoRestante(l) {
+      var hi = indiceDeHoje();
+      if (hi < 0) return { classe: 't-neutro', ico: 'relogio', titulo: '—', sub: semanaAnterior() ? 'Semana encerrada' : (semanaFutura() ? 'Semana futura' : 'Fim de semana') };
+      var c = l.dias[hi], s = situacao(l, hi);
+      if (!c.ativo) return { classe: 't-neutro', ico: 'relogio', titulo: '—', sub: 'Sem contrato hoje' };
+      if (c.ferias || s === 'Férias') return { classe: 't-neutro', ico: 'relogio', titulo: '—', sub: 'Em férias' };
+      if (s === 'Folga') return { classe: 't-neutro', ico: 'relogio', titulo: '—', sub: 'Em folga' };
+      if (s === 'Ausente') return { classe: 't-neutro', ico: 'relogio', titulo: '—', sub: 'Ausente hoje' };
+      if (s === 'Justificado') return { classe: 't-neutro', ico: 'relogio', titulo: '—', sub: 'Ausência justificada' };
+      var j = c.jornada;
+      if (!j) return { classe: 't-neutro', ico: 'relogio', titulo: '—', sub: l.temHorario ? 'Sem expediente hoje' : 'Sem horário cadastrado' };
+      var agora = agoraMinutos(), de = minutos(j.de), ate = minutos(j.ate);
+      var detalhe = 'Jornada ' + duracao(j.jornadaMin) + (j.almocoMin ? ' + almoço ' + duracao(j.almocoMin) : '') + ' · ' + j.de + '–' + j.ate +
+        (j.origem !== 'Horários' ? ' (' + j.origem + ')' : '');
+      if (agora < de) return { classe: 't-espera', ico: 'relogio', titulo: 'Entrada ' + j.de, sub: 'jornada de ' + duracao(j.jornadaMin), dica: detalhe };
+      if (agora < ate) return { classe: 't-andamento', ico: 'relogio', titulo: duracao(ate - agora), sub: 'até ' + j.ate, dica: detalhe };
+      return { classe: 't-concluida', ico: 'relogio', titulo: '—', sub: 'Jornada concluída', dica: detalhe };
+    }
+
+    function celulaTempo(l) {
+      var t = tempoRestante(l);
+      var div = novo('div', 'tempo-cel ' + t.classe);
+      div.insertAdjacentHTML('beforeend', icone(t.ico));
+      var txt = novo('div');
+      txt.appendChild(novo('b', '', t.titulo));
+      txt.appendChild(novo('small', '', t.sub));
+      div.appendChild(txt);
+      if (t.dica) div.title = t.dica;
+      return div;
+    }
+
+    function textoObservacao(l) {
+      if (refIdx >= 0 && valor(l, refIdx).observacao) return { dia: '', texto: valor(l, refIdx).observacao };
+      for (var i = dados.dias.length - 1; i >= 0; i--) {
+        var o = valor(l, i).observacao;
+        if (o) return { dia: dados.dias[i].sigla, texto: o };
+      }
+      return null;
+    }
+
+    function desenharTabela() {
+      var corpo = el('corpo');
+      limpar(corpo);
+      var lista = dados.linhas.filter(visivel);
+      if (!lista.length) {
+        var tr0 = novo('tr'), td0 = novo('td', 'vazio-tab', dados.linhas.length ? 'Nenhum funcionário com esses filtros.' : 'Nenhum funcionário com contrato válido nesta semana.');
+        td0.colSpan = dados.dias.length + 4; tr0.appendChild(td0); corpo.appendChild(tr0);
+        return;
+      }
+      lista.forEach(function (l) {
+        var tr = novo('tr');
+        var tdNome = novo('td', 'nome');
+        var ln = novo('div', 'linha-nome');
+        var nomeBloco = novo('div');
+        nomeBloco.style.minWidth = '0';
+        var strong = novo('strong', '', l.nome); strong.title = l.nome + ' (' + l.idFuncionario + ')';
+        nomeBloco.appendChild(strong);
+        if (l.setor) nomeBloco.appendChild(novo('span', 'setor', l.setor));
+        ln.appendChild(nomeBloco);
+        if (l.vinculo) ln.appendChild(novo('span', 'tag', vinculoExibido(l.vinculo)));
+        tdNome.appendChild(ln);
+        tr.appendChild(tdNome);
+        dados.dias.forEach(function (d, i) {
+          var td = novo('td', 'dia' + (i === refIdx ? ' ref' : ''));
+          td.appendChild(chipDaCelula(l, i));
+          tr.appendChild(td);
+        });
+        var tdT = novo('td', 'tempo'); tdT.dataset.id = l.idFuncionario; tdT.appendChild(celulaTempo(l)); tr.appendChild(tdT);
+        var o = textoObservacao(l);
+        var tdO = novo('td', 'obs');
+        if (o) {
+          if (o.dia) tdO.appendChild(novo('span', 'dia-obs', o.dia));
+          tdO.appendChild(document.createTextNode(o.texto));
+          tdO.title = o.texto;
+        } else tdO.textContent = '—';
+        tr.appendChild(tdO);
+        var tdM = novo('td', 'menu');
+        var bm = novo('button', 'btn-pontos'); bm.type = 'button'; bm.title = 'Mais opções'; bm.setAttribute('aria-label', 'Mais opções de ' + l.nome);
+        bm.insertAdjacentHTML('beforeend', icone('pontos'));
+        bm.addEventListener('click', function (ev) { ev.stopPropagation(); abrirMenuLinha(l, bm); });
+        tdM.appendChild(bm);
+        tr.appendChild(tdM);
+        corpo.appendChild(tr);
+      });
+    }
+
+    function atualizarTempos() {
+      if (!dados) return;
+      var porId = {};
+      dados.linhas.forEach(function (l) { porId[l.idFuncionario] = l; });
+      Array.prototype.forEach.call(document.querySelectorAll('td.tempo[data-id]'), function (td) {
+        var l = porId[td.dataset.id];
+        if (!l) return;
+        limpar(td);
+        td.appendChild(celulaTempo(l));
+      });
+    }
+
+    function desenharIndicadores() {
+      var d = refIdx >= 0 ? dados.dias[refIdx] : null;
+      var sufixo = !d ? '' : (d.hoje ? ' hoje' : ' em ' + brCurto(d.iso));
+      el('kPresentesRot').textContent = 'Presentes' + sufixo;
+      el('kAusentesRot').textContent = 'Ausentes' + sufixo;
+      if (!d) { ['kTotal', 'kPresentes', 'kAusentes', 'kPendentes', 'kTaxa'].forEach(function (id) { el(id).textContent = '—'; }); return; }
+      var total = 0, presentes = 0, ausentes = 0, pendentes = 0, fora = 0;
+      dados.linhas.filter(passaFiltrosBase).forEach(function (l) {
+        var s = situacao(l, refIdx), c = l.dias[refIdx];
+        var registrado = !!valor(l, refIdx).status;
+        if (!esperado(l, refIdx) && !(registrado && !c.ferias)) return;
+        total++;
+        if (PRESENTES.indexOf(s) >= 0) presentes++;
+        else if (AUSENTES.indexOf(s) >= 0) ausentes++;
+        else if (s === PENDENTE) pendentes++;
+        else if (s === 'Folga' || s === 'Férias') fora++;
+      });
+      el('kTotal').textContent = total;
+      el('kPresentes').textContent = presentes;
+      el('kAusentes').textContent = ausentes;
+      el('kPendentes').textContent = pendentes;
+      el('kPendentesRot').textContent = pendentes === 1 ? 'Pendente' : 'Pendentes';
+      var base = total - fora;
+      el('kTaxa').textContent = (d.futuro || base <= 0) ? '—' : Math.round(presentes * 100 / base) + '%';
+      el('kTaxa').parentNode.title = 'Presentes (inclui atrasados) ÷ funcionários esperados no dia, sem contar folga e férias.';
+    }
+
+    function desenharAviso() {
+      var a = el('aviso'), b = el('avisoBotao');
+      b.hidden = true;
+      a.className = 'aviso';
+      if (!dados.podeEditar) {
+        a.className = 'aviso mostrar alerta';
+        el('avisoTexto').textContent = dados.motivoSemEdicao || 'Você pode consultar, mas não lançar presença.';
+      } else if (semanaAnterior() && !edicaoLiberada) {
+        a.className = 'aviso mostrar';
+        el('avisoTexto').textContent = 'Você está consultando uma semana anterior. Os registros estão protegidos contra alteração acidental.';
+        b.hidden = false;
+      } else if (semanaAnterior() && edicaoLiberada) {
+        a.className = 'aviso mostrar alerta';
+        el('avisoTexto').textContent = 'Edição liberada nesta semana anterior. Alterações em registros já lançados pedem confirmação e ficam no Histórico.';
+      } else if (semanaFutura()) {
+        a.className = 'aviso mostrar';
+        el('avisoTexto').textContent = 'Semana futura: a presença só pode ser lançada quando o dia chegar.';
+      }
+      var oc = dados.ocultos.ferias;
+      el('ocultos').textContent = oc ? (oc === 1 ? '1 funcionário de férias durante toda a semana não aparece na lista.' : oc + ' funcionários de férias durante toda a semana não aparecem na lista.') : '';
+    }
+
+    function desenharPendencias() {
+      var n = Object.keys(alteracoes).length;
+      el('pendencias').className = 'pendencias' + (n ? ' mostrar' : '');
+      el('pendQtd').textContent = n === 1 ? '1 registro alterado' : n + ' registros alterados';
+      el('salvar').disabled = salvando || !n;
+      el('desfazer').disabled = salvando || !n;
+    }
+
+    function desenharTudo() {
+      document.body.classList.toggle('somente-leitura', !dados.podeEditar || !semanaEditavel());
+      montarCabecalho();
+      desenharTabela();
+      desenharIndicadores();
+      desenharAviso();
+      desenharPendencias();
+      var d = refIdx >= 0 ? dados.dias[refIdx] : null;
+      el('fSituacao').title = d ? 'Situação em ' + d.nome.toLowerCase() + ', ' + br(d.iso) + ' (clique no cabeçalho de um dia para trocar)' : '';
+    }
+
+    function montarLegenda() {
+      var l = el('legenda');
+      limpar(l);
+      dados.status.concat([PENDENTE]).forEach(function (s) {
+        var sp = novo('span', 'l-' + CLASSE[s]);
+        sp.appendChild(novo('i'));
+        sp.appendChild(document.createTextNode(s));
+        if (s === PENDENTE) sp.title = 'Dia de trabalho que já chegou e ainda não tem registro (não é gravado).';
+        l.appendChild(sp);
+      });
+    }
+
+    /* ===================== carga ===================== */
+    function confirmarDescarte() {
+      var n = Object.keys(alteracoes).length;
+      return !n || window.confirm('Há ' + n + ' alteração(ões) não salva(s). Descartar e continuar?');
+    }
+
+    function carregarSemana(iso, opcoes) {
+      var o = opcoes || {};
+      if (carregando || salvando) return;
+      if (!o.manterAlteracoes && !confirmarDescarte()) { if (dados) el('seletorSemana').value = dados.segundaIso; return; }
+      carregando = true;
+      fecharSuspensos();
+      el('tabelaCaixa').classList.add('carregando-tab');
+      statusDoTopo('Carregando dados', 'carregando');
+      google.script.run
+        .withSuccessHandler(function (d) {
+          carregando = false;
+          var mesmaSemana = dados && dados.segundaIso === d.segundaIso;
+          dados = d;
+          carregadoEm = Date.now();
+          if (!o.manterAlteracoes) alteracoes = {};
+          if (!mesmaSemana) {
+            edicaoLiberada = false;
+            var hi = indiceDeHoje();
+            refIdx = hi >= 0 ? hi : ultimoDiaJaChegado();
+          }
+          el('tabelaCaixa').classList.remove('carregando-tab');
+          el('instTitulo').textContent = d.instituicao.titulo;
+          el('instOrgao').textContent = d.instituicao.orgao;
+          el('instSetor').textContent = d.instituicao.setor ? 'Setor: ' + d.instituicao.setor : '';
+          el('atualizadoEm').textContent = d.atualizadoEm;
+          el('ultimaAtualizacao').textContent = 'A última atualização foi realizada em ' + d.atualizadoEm.substring(0, 10) + ' às ' + d.atualizadoEm.substring(11, 16) + '.';
+          el('minAuto').textContent = d.atualizacaoAutomaticaMin;
+          statusDoTopo('Dados atualizados');
+          preencherSelect('fVinculo', 'Todos', d.vinculos, vinculoExibido);
+          preencherSelect('fSetor', 'Todos', d.setores);
+          preencherSelect('fSituacao', 'Todas', d.status.concat([PENDENTE]));
+          montarSeletorDeSemana();
+          montarLegenda();
+          desenharTudo();
+        })
+        .withFailureHandler(function (e) {
+          carregando = false;
+          el('tabelaCaixa').classList.remove('carregando-tab');
+          statusDoTopo('Falha ao carregar', 'erro');
+          avisar('Não foi possível carregar a semana: ' + erroTexto(e), 'erro');
+          if (dados) el('seletorSemana').value = dados.segundaIso;
+        })
+        .obterSemanaDaPresenca(iso || '');
+    }
+
+    function ultimoDiaJaChegado() {
+      var r = 0;
+      dados.dias.forEach(function (d, i) { if (!d.futuro) r = i; });
+      return r;
+    }
+
+    /* ===================== menus suspensos ===================== */
+    function posicionar(menu, alvo) {
+      menu.classList.add('aberto');
+      var r = alvo.getBoundingClientRect(), w = menu.offsetWidth, h = menu.offsetHeight;
+      var x = Math.min(Math.max(8, r.left), window.innerWidth - w - 8);
+      var y = r.bottom + 6;
+      if (y + h > window.innerHeight - 8) y = Math.max(8, r.top - h - 6);
+      menu.style.left = x + 'px';
+      menu.style.top = y + 'px';
+    }
+    function fecharSuspensos() { ['editor', 'menuAcoes', 'menuLinha'].forEach(function (id) { el(id).classList.remove('aberto'); }); }
+    function algumSuspensoAberto() { return ['editor', 'menuAcoes', 'menuLinha'].some(function (id) { return el(id).classList.contains('aberto'); }); }
+    function itemDeMenu(menu, ico, texto, acao, desabilitado) {
+      var b = novo('button', 'item');
+      b.type = 'button';
+      b.insertAdjacentHTML('beforeend', icone(ico));
+      b.appendChild(novo('span', '', texto));
+      b.disabled = !!desabilitado;
+      b.addEventListener('click', function () { fecharSuspensos(); acao(); });
+      menu.appendChild(b);
+    }
+
+    /* ===================== editor da célula ===================== */
+    function definirAlteracao(l, i, novoValor) {
+      var o = original(l, i), k = chave(l, i);
+      if (novoValor.status === o.status && novoValor.observacao === o.observacao && (novoValor.horaChegada || '') === o.horaChegada) delete alteracoes[k];
+      else alteracoes[k] = { status: novoValor.status, observacao: novoValor.observacao, horaChegada: novoValor.horaChegada || '' };
+    }
+
+    function abrirEditor(l, i, alvo) {
+      fecharSuspensos();
+      var ed = el('editor'), d = dados.dias[i], c = l.dias[i], v = valor(l, i), editavel = podeEditar(l, i);
+      var sel = v.status;
+      limpar(ed);
+      ed.appendChild(novo('h3', '', l.nome));
+      var j = c.jornada;
+      var sub = d.nome + ', ' + br(d.iso) + (j ? ' · ' + j.de + '–' + j.ate + (j.almocoMin ? ' (almoço ' + duracao(j.almocoMin) + ')' : '') : (c.ativo ? (l.temHorario ? ' · sem expediente' : ' · sem horário cadastrado') : ''));
+      ed.appendChild(novo('div', 'sub', sub));
+
+      if (!editavel) {
+        var s = situacao(l, i);
+        var chip = novo('div', 'chip ' + (s ? 's-' + CLASSE[s] : 's-nada'));
+        if (s) chip.insertAdjacentHTML('beforeend', icone(ICONE_STATUS[s]));
+        chip.appendChild(novo('span', '', s || 'Sem registro'));
+        ed.appendChild(chip);
+        if (v.horaChegada) ed.appendChild(novo('div', 'dica', 'Chegada às ' + v.horaChegada + (atrasoDe(l, i, v) !== '' ? ' (atraso de ' + duracao(atrasoDe(l, i, v)) + ')' : '')));
+        if (v.observacao) ed.appendChild(novo('div', 'dica', 'Observação: ' + v.observacao));
+        ed.appendChild(novo('div', 'dica erro', motivoTravada(l, i)));
+        metaDoRegistro(ed, c.registro);
+        var bf = novo('div', 'botoes'); var fechar = novo('button', 'btn-pequeno', 'Fechar'); fechar.type = 'button';
+        fechar.addEventListener('click', fecharSuspensos); bf.appendChild(fechar); ed.appendChild(bf);
+        posicionar(ed, alvo);
+        return;
+      }
+
+      var opcoes = novo('div', 'opcoes');
+      var botoesStatus = {};
+      var campoHora = novo('div');
+      campoHora.appendChild(novo('label', '', 'Hora de chegada'));
+      var hora = novo('input'); hora.type = 'time'; hora.value = v.horaChegada || ''; hora.step = 60;
+      campoHora.appendChild(hora);
+      var dicaHora = novo('div', 'dica');
+      campoHora.appendChild(dicaHora);
+      var rotObs = novo('label', '', 'Observação');
+      var obs = novo('textarea'); obs.maxLength = dados.maxObservacao; obs.value = v.observacao || ''; obs.placeholder = 'Opcional (ex.: atestado médico)';
+      var erro = novo('div', 'dica erro');
+
+      function atualizarHora() {
+        campoHora.style.display = sel === dados.statusAtrasado ? '' : 'none';
+        dicaHora.className = 'dica';
+        if (sel !== dados.statusAtrasado) return;
+        if (!j) { dicaHora.textContent = 'Sem horário previsto neste dia: o atraso não será calculado.'; return; }
+        if (!hora.value) { dicaHora.textContent = 'Entrada prevista: ' + j.de + '. A saída continua às ' + j.ate + '.'; return; }
+        var m = minutos(hora.value) - minutos(j.de);
+        if (m <= 0) { dicaHora.className = 'dica erro'; dicaHora.textContent = 'Chegada no horário ou antes de ' + j.de + ': use "Presente".'; }
+        else dicaHora.textContent = 'Atraso de ' + duracao(m) + ' (entrada prevista ' + j.de + '). A saída continua às ' + j.ate + '.';
+      }
+      function marcar(s) {
+        sel = s;
+        Object.keys(botoesStatus).forEach(function (k) { botoesStatus[k].classList.toggle('sel', k === s); });
+        atualizarHora();
+      }
+      function aplicar() {
+        erro.textContent = '';
+        if (!sel) { erro.textContent = 'Escolha a situação.'; return; }
+        var h = sel === dados.statusAtrasado ? hora.value : '';
+        if (sel === dados.statusAtrasado) {
+          if (!h) { erro.textContent = 'Informe a hora de chegada.'; hora.focus(); return; }
+          if (j && minutos(h) <= minutos(j.de)) { erro.textContent = 'A chegada precisa ser depois de ' + j.de + ' para contar como atraso.'; return; }
+        }
+        definirAlteracao(l, i, { status: sel, observacao: obs.value.trim(), horaChegada: h });
+        fecharSuspensos();
+        desenharTudo();
+      }
+
+      dados.status.forEach(function (s) {
+        var b = novo('button', 'chip s-' + CLASSE[s] + (s === sel ? ' sel' : ''));
+        b.type = 'button';
+        b.insertAdjacentHTML('beforeend', icone(ICONE_STATUS[s]));
+        b.appendChild(novo('span', '', s));
+        b.addEventListener('click', function () {
+          marcar(s);
+          if (s === dados.statusAtrasado) { hora.focus(); return; }
+          aplicar(); // escolha rápida: um clique registra (a observação digitada vai junto)
+        });
+        botoesStatus[s] = b;
+        opcoes.appendChild(b);
+      });
+      ed.appendChild(opcoes);
+      ed.appendChild(campoHora);
+      ed.appendChild(rotObs);
+      ed.appendChild(obs);
+      ed.appendChild(erro);
+      metaDoRegistro(ed, c.registro);
+
+      var botoes = novo('div', 'botoes');
+      if (alterada(l, i)) {
+        var desf = novo('button', 'btn-pequeno link', 'Desfazer esta alteração'); desf.type = 'button';
+        desf.addEventListener('click', function () { delete alteracoes[chave(l, i)]; fecharSuspensos(); desenharTudo(); });
+        botoes.appendChild(desf);
+      }
+      var cancelar = novo('button', 'btn-pequeno', 'Cancelar'); cancelar.type = 'button';
+      cancelar.addEventListener('click', fecharSuspensos);
+      var ok = novo('button', 'btn-pequeno pri', 'Aplicar'); ok.type = 'button';
+      ok.addEventListener('click', aplicar);
+      botoes.appendChild(cancelar); botoes.appendChild(ok);
+      ed.appendChild(botoes);
+      hora.addEventListener('input', atualizarHora);
+      ed.onkeydown = function (ev) {
+        if (ev.key === 'Escape') fecharSuspensos();
+        if (ev.key === 'Enter' && ev.target.tagName !== 'TEXTAREA') { ev.preventDefault(); aplicar(); }
+      };
+      atualizarHora();
+      posicionar(ed, alvo);
+      (sel === dados.statusAtrasado ? hora : (botoesStatus[sel] || opcoes.firstChild)).focus();
+    }
+
+    function metaDoRegistro(ed, r) {
+      if (!r) return;
+      var m = novo('div', 'meta');
+      m.appendChild(novo('div', '', 'Lançado por ' + r.lancadoPor + ' em ' + r.lancadoEm + ' (' + r.idRegistro + ')'));
+      if (r.atualizadoPor) m.appendChild(novo('div', '', 'Alterado por ' + r.atualizadoPor + ' em ' + r.atualizadoEm));
+      ed.appendChild(m);
+    }
+
+    /* ===================== ações em massa ===================== */
+    function confirmar(titulo, linhasTexto, textoOk, aoConfirmar) {
+      el('confTitulo').textContent = titulo;
+      var corpo = el('confCorpo');
+      limpar(corpo);
+      linhasTexto.forEach(function (t) { if (t && t.nodeType) corpo.appendChild(t); else corpo.appendChild(novo('p', '', t)); });
+      var ok = el('confOk');
+      ok.textContent = textoOk;
+      ok.disabled = false;
+      ok.onclick = function () { ok.disabled = true; aoConfirmar(); };
+      el('fundoConfirmar').classList.add('aberto');
+    }
+    function fecharJanela(id) { el(id).classList.remove('aberto'); }
+
+    function celulasSemRegistro(linhas, indices) {
+      var alvo = [];
+      linhas.forEach(function (l) {
+        indices.forEach(function (i) {
+          if (podeEditar(l, i) && !valor(l, i).status && esperado(l, i)) alvo.push({ l: l, i: i });
+        });
+      });
+      return alvo;
+    }
+
+    function marcarPresentes(alvo, descricao) {
+      if (!alvo.length) { avisar('Nenhum dia sem registro para marcar ' + descricao + '.'); return; }
+      var pessoas = {};
+      alvo.forEach(function (a) { pessoas[a.l.idFuncionario] = true; });
+      confirmar('Marcar como Presente', [
+        'Marcar ' + alvo.length + ' dia(s) sem registro como "Presente" ' + descricao + ' (' + Object.keys(pessoas).length + ' funcionário(s)).',
+        'Registros já lançados não são alterados. Nada é gravado até você clicar em "Salvar registros".'
+      ], 'Marcar ' + alvo.length, function () {
+        alvo.forEach(function (a) { definirAlteracao(a.l, a.i, { status: 'Presente', observacao: valor(a.l, a.i).observacao, horaChegada: '' }); });
+        fecharJanela('fundoConfirmar');
+        desenharTudo();
+        avisar(alvo.length + ' dia(s) marcados como Presente. Clique em "Salvar registros" para gravar.');
+      });
+    }
+
+    function abrirMenuAcoes() {
+      var m = el('menuAcoes');
+      limpar(m);
+      var visiveis = dados.linhas.filter(visivel);
+      var d = refIdx >= 0 ? dados.dias[refIdx] : null;
+      var noDia = d ? celulasSemRegistro(visiveis, [refIdx]) : [];
+      var naSemana = celulasSemRegistro(visiveis, dados.dias.map(function (_, i) { return i; }).filter(function (i) { return !dados.dias[i].futuro; }));
+      itemDeMenu(m, 'okCirculo', 'Marcar Presente: sem registro em ' + (d ? (d.hoje ? 'hoje' : brCurto(d.iso)) : '—') + ' (' + noDia.length + ')',
+        function () { marcarPresentes(noDia, 'em ' + (d ? br(d.iso) : '')); }, !noDia.length);
+      itemDeMenu(m, 'okCirculo', 'Marcar Presente: todos os dias pendentes da semana (' + naSemana.length + ')',
+        function () { marcarPresentes(naSemana, 'nesta semana'); }, !naSemana.length);
+      itemDeMenu(m, 'desfazer', 'Desfazer alterações não salvas (' + Object.keys(alteracoes).length + ')', desfazerTudo, !Object.keys(alteracoes).length);
+      itemDeMenu(m, 'pessoas', 'Mostrar todos os funcionários (limpar filtros)', function () {
+        el('busca').value = ''; el('fVinculo').value = ''; el('fSetor').value = ''; el('fSituacao').value = ''; desenharTudo();
+      });
+      posicionar(m, el('abrirAcoes'));
+    }
+
+    function abrirMenuLinha(l, alvo) {
+      var m = el('menuLinha');
+      limpar(m);
+      var pend = celulasSemRegistro([l], dados.dias.map(function (_, i) { return i; }).filter(function (i) { return !dados.dias[i].futuro; }));
+      var minhas = Object.keys(alteracoes).filter(function (k) { return k.indexOf(l.idFuncionario + '|') === 0; });
+      itemDeMenu(m, 'pessoaHist', 'Ver histórico de ' + l.nome.split(' ')[0], function () { abrirHistorico(l.idFuncionario); });
+      itemDeMenu(m, 'okCirculo', 'Marcar Presente nos dias pendentes (' + pend.length + ')', function () { marcarPresentes(pend, 'para ' + l.nome); }, !pend.length);
+      itemDeMenu(m, 'desfazer', 'Desfazer alterações desta pessoa (' + minhas.length + ')', function () {
+        minhas.forEach(function (k) { delete alteracoes[k]; }); desenharTudo();
+      }, !minhas.length);
+      posicionar(m, alvo);
+    }
+
+    function desfazerTudo() {
+      var n = Object.keys(alteracoes).length;
+      if (!n) return;
+      confirmar('Desfazer alterações', ['Descartar ' + n + ' alteração(ões) ainda não salva(s)? Os registros gravados não mudam.'], 'Desfazer', function () {
+        alteracoes = {};
+        fecharJanela('fundoConfirmar');
+        desenharTudo();
+      });
+    }
+
+    /* ===================== salvar ===================== */
+    function listaDeAlteracoes() {
+      var porId = {};
+      dados.linhas.forEach(function (l) { porId[l.idFuncionario] = l; });
+      return Object.keys(alteracoes).map(function (k) {
+        var p = k.split('|'), l = porId[p[0]];
+        var i = dados.dias.map(function (d) { return d.iso; }).indexOf(p[1]);
+        return { l: l, i: i, v: alteracoes[k], o: original(l, i) };
+      }).filter(function (a) { return a.l && a.i >= 0; });
+    }
+
+    function confirmarSalvar() {
+      if (salvando) return;
+      var lista = listaDeAlteracoes();
+      if (!lista.length) { avisar('Nada para salvar.'); return; }
+      var invalidas = lista.filter(function (a) { return !a.v.status || (a.v.status === dados.statusAtrasado && !a.v.horaChegada); });
+      if (invalidas.length) { avisar('Há ' + invalidas.length + ' registro(s) incompletos (situação ou hora de chegada).', 'erro'); return; }
+      var novos = lista.filter(function (a) { return !a.o.status; });
+      var alt = lista.filter(function (a) { return a.o.status; });
+      var porStatus = {};
+      lista.forEach(function (a) { porStatus[a.v.status] = (porStatus[a.v.status] || 0) + 1; });
+      var tabela = novo('table');
+      var cab = novo('tr'); ['Situação', 'Registros'].forEach(function (t) { cab.appendChild(novo('th', '', t)); }); tabela.appendChild(cab);
+      Object.keys(porStatus).forEach(function (s) {
+        var tr = novo('tr'), td = novo('td');
+        var chip = novo('span', 'chip s-' + CLASSE[s]); chip.insertAdjacentHTML('beforeend', icone(ICONE_STATUS[s])); chip.appendChild(novo('span', '', s));
+        td.appendChild(chip); tr.appendChild(td); tr.appendChild(novo('td', '', String(porStatus[s]))); tabela.appendChild(tr);
+      });
+      var partes = [novos.length + ' novo(s) registro(s) e ' + alt.length + ' alteração(ões) de registro já lançado.', tabela];
+      if (alt.length) {
+        var caixa = novo('div', 'alt');
+        caixa.appendChild(novo('b', '', 'Registros já lançados que serão alterados:'));
+        alt.forEach(function (a) {
+          var t = a.l.nome + ' · ' + dados.dias[a.i].sigla + ' ' + brCurto(dados.dias[a.i].iso) + ': ' + a.o.status + ' → ' + a.v.status +
+            (a.v.observacao !== a.o.observacao ? ' (observação alterada)' : '') + (a.v.horaChegada !== a.o.horaChegada && a.v.horaChegada ? ' (chegada ' + a.v.horaChegada + ')' : '');
+          caixa.appendChild(novo('div', '', '• ' + t));
+        });
+        caixa.appendChild(novo('div', '', 'O valor anterior fica guardado no Histórico.'));
+        partes.push(caixa);
+      }
+      confirmar('Salvar registros · semana de ' + brCurto(dados.segundaIso) + ' a ' + brCurto(dados.sextaIso), partes, 'Confirmar e salvar', function () {
+        enviar(lista, alt.length > 0);
+      });
+    }
+
+    function enviar(lista, haAlteracoes) {
+      if (salvando) return; // nunca envia duas vezes
+      salvando = true;
+      desenharPendencias();
+      el('pendMsg').textContent = 'Salvando...';
+      var itens = lista.map(function (a) {
+        return { data: dados.dias[a.i].iso, idFuncionario: a.l.idFuncionario, status: a.v.status, observacao: a.v.observacao, horaChegada: a.v.horaChegada };
+      });
+      google.script.run
+        .withSuccessHandler(function (r) {
+          salvando = false;
+          fecharJanela('fundoConfirmar');
+          alteracoes = {};
+          el('pendMsg').textContent = 'As alterações só valem depois de salvas.';
+          avisar(r.mensagem, 'ok');
+          carregarSemana(dados.segundaIso, { manterAlteracoes: true });
+        })
+        .withFailureHandler(function (e) {
+          salvando = false;
+          fecharJanela('fundoConfirmar');
+          el('pendMsg').textContent = 'Não foi salvo. Corrija e tente de novo; suas alterações continuam aqui.';
+          desenharPendencias();
+          avisar('Erro ao salvar: ' + erroTexto(e), 'erro');
+        })
+        .salvarPresencasDaSemanaDoDialogo({ itens: itens, confirmouAlteracoes: haAlteracoes });
+    }
+
+    /* ===================== histórico (somente leitura) ===================== */
+    function abrirHistorico(idFuncionario) {
+      fecharSuspensos();
+      el('hInicio').value = idFuncionario ? somarDias(dados.hojeIso, -30) : dados.segundaIso;
+      el('hFim').value = idFuncionario ? dados.hojeIso : dados.sextaIso;
+      el('fundoHistorico').classList.add('aberto');
+      function seguir() { el('hPessoa').value = idFuncionario || ''; consultarHistorico(); }
+      if (pessoasHistorico) { seguir(); return; }
+      el('hResultado').textContent = 'Carregando...';
+      google.script.run
+        .withSuccessHandler(function (lista) {
+          pessoasHistorico = lista;
+          var s = el('hPessoa');
+          lista.forEach(function (p) { var o = novo('option', '', p.nome); o.value = p.id; s.appendChild(o); });
+          seguir();
+        })
+        .withFailureHandler(function (e) { el('hResultado').textContent = erroTexto(e); })
+        .listarPessoasParaHistoricoDePresenca();
+    }
+
+    function consultarHistorico() {
+      var res = el('hResultado');
+      if (!el('hInicio').value || !el('hFim').value) { res.textContent = 'Informe o período.'; return; }
+      res.textContent = 'Consultando...';
+      el('hConsultar').disabled = true;
+      google.script.run
+        .withSuccessHandler(function (regs) {
+          el('hConsultar').disabled = false;
+          limpar(res);
+          if (!regs.length) { res.appendChild(novo('p', '', 'Nenhum registro de presença neste período.')); return; }
+          res.appendChild(novo('p', 'dica', regs.length + ' registro(s).'));
+          var t = novo('table');
+          var cab = novo('tr');
+          ['Data', 'Funcionário', 'Situação', 'Chegada / atraso', 'Observação', 'Lançamento'].forEach(function (x) { cab.appendChild(novo('th', '', x)); });
+          t.appendChild(cab);
+          regs.forEach(function (r) {
+            var tr = novo('tr');
+            tr.appendChild(novo('td', '', r.data));
+            tr.appendChild(novo('td', '', r.nome));
+            var td = novo('td'), chip = novo('span', 'chip s-' + (CLASSE[r.status] || 'nada'));
+            if (ICONE_STATUS[r.status]) chip.insertAdjacentHTML('beforeend', icone(ICONE_STATUS[r.status]));
+            chip.appendChild(novo('span', '', r.status)); td.appendChild(chip); tr.appendChild(td);
+            tr.appendChild(novo('td', '', r.horaChegada ? r.horaChegada + (r.atrasoMin !== '' ? ' (+' + duracao(r.atrasoMin) + ')' : '') : '—'));
+            tr.appendChild(novo('td', '', r.observacao || '—'));
+            var tl = novo('td');
+            tl.appendChild(novo('div', '', r.lancadoPor + ' · ' + r.lancadoEm));
+            if (r.atualizadoPor) tl.appendChild(novo('div', 'alteracoes-reg', 'Alterado por ' + r.atualizadoPor + ' · ' + r.atualizadoEm));
+            r.alteracoes.forEach(function (a) {
+              tl.appendChild(novo('div', 'alteracoes-reg', a.quando + ' · ' + a.campo + ': ' + (a.anterior || '(vazio)') + ' → ' + (a.novo || '(vazio)') + ' (' + a.usuario + ')'));
+            });
+            tr.appendChild(tl);
+            t.appendChild(tr);
+          });
+          res.appendChild(t);
+        })
+        .withFailureHandler(function (e) { el('hConsultar').disabled = false; res.textContent = erroTexto(e); })
+        .consultarHistoricoDePresencaDoDialogo({ idFuncionario: el('hPessoa').value, inicio: el('hInicio').value, fim: el('hFim').value });
+    }
+
+    /* ===================== exportar ===================== */
+    function exportar() {
+      if (!dados) return;
+      var linhas = dados.linhas.filter(visivel);
+      var sep = ';';
+      var q = function (t) { t = String(t === null || t === undefined ? '' : t); return /[";\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+      var cab = ['Funcionário', 'ID', 'Vínculo', 'Setor'].concat(dados.dias.map(function (d) { return d.sigla + ' ' + br(d.iso); })).concat(['Tempo restante', 'Observações da semana']);
+      var out = [cab.map(q).join(sep)];
+      linhas.forEach(function (l) {
+        var obs = [];
+        var cel = dados.dias.map(function (d, i) {
+          var v = valor(l, i), s = situacao(l, i), a = atrasoDe(l, i, v);
+          if (v.observacao) obs.push(d.sigla + ': ' + v.observacao);
+          return (s || '—') + (v.horaChegada && s === dados.statusAtrasado ? ' ' + v.horaChegada + (a !== '' ? ' (+' + duracao(a) + ')' : '') : '') + (alterada(l, i) ? ' (não salvo)' : '');
+        });
+        var t = tempoRestante(l);
+        out.push([l.nome, l.idFuncionario, vinculoExibido(l.vinculo), l.setor].concat(cel).concat([t.titulo === '—' ? t.sub : t.titulo + ' ' + t.sub, obs.join(' | ')]).map(q).join(sep));
+      });
+      var blob = new Blob(['﻿' + out.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'presenca_semana_' + dados.segundaIso + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+      avisar('Relatório gerado: ' + linhas.length + ' funcionário(s) visíveis na semana de ' + br(dados.segundaIso) + '.');
+    }
+
+    /* ===================== eventos ===================== */
+    preencherIcones();
+    el('semanaAnterior').addEventListener('click', function () { if (dados) carregarSemana(somarDias(dados.segundaIso, -7)); });
+    el('semanaProxima').addEventListener('click', function () { if (dados) carregarSemana(somarDias(dados.segundaIso, 7)); });
+    el('semanaAtual').addEventListener('click', function () { carregarSemana(''); });
+    el('seletorSemana').addEventListener('change', function () { carregarSemana(el('seletorSemana').value); });
+    el('atualizarAgora').addEventListener('click', function () { if (dados) carregarSemana(dados.segundaIso, { manterAlteracoes: true }); });
+    ['busca', 'fVinculo', 'fSetor', 'fSituacao'].forEach(function (id) { el(id).addEventListener('input', function () { if (dados) desenharTudo(); }); });
+    el('abrirAcoes').addEventListener('click', function (ev) { ev.stopPropagation(); if (dados) abrirMenuAcoes(); });
+    el('abrirHistorico').addEventListener('click', function () { if (dados) abrirHistorico(''); });
+    el('hConsultar').addEventListener('click', consultarHistorico);
+    el('hIrSemana').addEventListener('click', function () {
+      if (!el('hInicio').value) return;
+      fecharJanela('fundoHistorico');
+      carregarSemana(segundaDe(el('hInicio').value));
+    });
+    el('avisoBotao').addEventListener('click', function () {
+      confirmar('Permitir edição', ['Liberar a edição da semana de ' + br(dados.segundaIso) + ' a ' + br(dados.sextaIso) + '?',
+        'Alterar um registro já lançado continua pedindo confirmação e o valor anterior fica no Histórico.'], 'Permitir edição', function () {
+        edicaoLiberada = true; fecharJanela('fundoConfirmar'); desenharTudo();
+      });
+    });
+    el('desfazer').addEventListener('click', desfazerTudo);
+    el('salvar').addEventListener('click', confirmarSalvar);
+    el('exportar').addEventListener('click', exportar);
+    Array.prototype.forEach.call(document.querySelectorAll('[data-fechar]'), function (b) {
+      b.addEventListener('click', function () { if (!salvando) fecharJanela(b.getAttribute('data-fechar')); });
+    });
+    document.addEventListener('click', function (ev) {
+      if (!ev.target.closest || !ev.target.closest('.suspenso')) fecharSuspensos();
+    });
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key !== 'Escape') return;
+      fecharSuspensos();
+      if (!salvando) { fecharJanela('fundoConfirmar'); fecharJanela('fundoHistorico'); }
+    });
+    el('principal').addEventListener('scroll', fecharSuspensos);
+    el('tabelaCaixa').addEventListener('scroll', fecharSuspensos);
+    window.addEventListener('beforeunload', function (ev) { if (Object.keys(alteracoes).length) { ev.preventDefault(); ev.returnValue = ''; } });
+
+    // tempo restante: atualiza a cada 30 s; virou o dia, recarrega (se não houver alteração por salvar)
+    setInterval(function () {
+      if (!dados) return;
+      if (agoraMinutos() >= 24 * 60 && !Object.keys(alteracoes).length && !carregando && !salvando) { carregarSemana(''); return; }
+      atualizarTempos();
+    }, 30000);
+    // atualização automática dos dados (nunca por cima de alterações não salvas ou de uma janela aberta)
+    setInterval(function () {
+      if (!dados || carregando || salvando || Object.keys(alteracoes).length || algumSuspensoAberto()) return;
+      if (el('fundoConfirmar').classList.contains('aberto') || el('fundoHistorico').classList.contains('aberto')) return;
+      if (Date.now() - carregadoEm >= dados.atualizacaoAutomaticaMin * 60000) carregarSemana(dados.segundaIso, { manterAlteracoes: true });
+    }, 30000);
+
+    carregarSemana('');
+  })();
+</script>

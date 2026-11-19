@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <?!= incluirArquivoHtml('Styles/Estilos') ?>
+  <style>
+    #grade { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    #grade th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #6c757d; padding: 4px 8px; border-bottom: 1px solid var(--borda); }
+    #grade td { padding: 5px 8px; border-bottom: 1px solid var(--cinza-claro); }
+    #grade td:first-child { font-weight: bold; color: var(--azul-escuro); width: 34%; }
+    #grade tr:last-child td { border-bottom: 0; }
+    #grade input[type=time] { max-width: 140px; }
+    .lista { max-height: 170px; overflow-y: auto; border: 1px solid var(--borda); border-radius: 6px; padding: 4px 8px; margin-top: 8px; background: var(--cinza-claro); }
+    .lista label { font-weight: normal; font-size: 13px; color: var(--cinza-escuro); margin: 0; padding: 4px 0; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    .lista label:has(input:disabled) { opacity: .5; cursor: default; }
+    details summary { cursor: pointer; font-weight: bold; color: var(--azul-escuro); padding: 12px 0 2px; }
+  </style>
+</head>
+<body>
+  <div class="topo"><h1>Horários de trabalho</h1><small>Horário semanal de cada funcionário</small></div>
+
+  <div class="barra">
+    <label for="pessoa">Funcionário</label>
+    <select id="pessoa"></select>
+  </div>
+
+  <div class="conteudo">
+    <div class="cartao">
+      <h2>Expediente da semana</h2>
+      <small>Deixe De e Até em branco nos dias sem expediente.</small>
+      <table id="grade"></table>
+      <div class="acoes">
+        <button id="copiar" type="button">Copiar a segunda para os outros dias</button>
+        <button id="limpar" type="button">Limpar tudo</button>
+      </div>
+    </div>
+
+    <div class="cartao">
+      <details>
+        <summary>Aplicar este mesmo horário também a outros funcionários</summary>
+        <div class="lista" id="outros"></div>
+      </details>
+    </div>
+  </div>
+
+  <div class="rodape">
+    <div id="msg"></div>
+    <div class="botoes">
+      <button class="s" id="fechar">Fechar</button>
+      <button class="p" id="salvar">Salvar horário</button>
+    </div>
+  </div>
+
+  <script>
+    var dados = { dias: [], pessoas: [], horarios: {} };
+
+    function el(id) { return document.getElementById(id); }
+    function limpar(no) { while (no.firstChild) no.removeChild(no.firstChild); }
+    function mensagem(texto, classe) { el('msg').textContent = texto; el('msg').className = classe || ''; }
+    function opcao(valor, texto) { var o = document.createElement('option'); o.value = valor; o.textContent = texto; return o; }
+
+    function montarGrade() {
+      var g = el('grade');
+      limpar(g);
+      var cab = document.createElement('tr');
+      ['', 'De', 'Até'].forEach(function (t) { var th = document.createElement('th'); th.textContent = t; cab.appendChild(th); });
+      g.appendChild(cab);
+      dados.dias.forEach(function (d) {
+        var tr = document.createElement('tr');
+        var nome = document.createElement('td');
+        nome.textContent = d.NOME;
+        tr.appendChild(nome);
+        ['de', 'ate'].forEach(function (p) {
+          var td = document.createElement('td');
+          var i = document.createElement('input');
+          i.type = 'time';
+          i.id = p + '_' + d.SIGLA;
+          td.appendChild(i);
+          tr.appendChild(td);
+        });
+        g.appendChild(tr);
+      });
+    }
+
+    function preencherPessoas() {
+      var anterior = el('pessoa').value;
+      limpar(el('pessoa'));
+      dados.pessoas.forEach(function (p) { el('pessoa').appendChild(opcao(p.id, p.nome + ' — ' + p.id + (p.status === 'Ativo' ? '' : ' (' + p.status + ')'))); });
+      if (anterior) el('pessoa').value = anterior;
+      limpar(el('outros'));
+      dados.pessoas.forEach(function (p) {
+        var rotulo = document.createElement('label');
+        var c = document.createElement('input');
+        c.type = 'checkbox';
+        c.value = p.id;
+        c.className = 'outro';
+        rotulo.appendChild(c);
+        rotulo.appendChild(document.createTextNode(p.nome));
+        el('outros').appendChild(rotulo);
+      });
+    }
+
+    function aoMudarPessoa() {
+      var h = dados.horarios[el('pessoa').value] || {};
+      dados.dias.forEach(function (d) {
+        el('de_' + d.SIGLA).value = h[d.SIGLA + '_DE'] || '';
+        el('ate_' + d.SIGLA).value = h[d.SIGLA + '_ATE'] || '';
+      });
+      var marcados = document.querySelectorAll('.outro');
+      for (var i = 0; i < marcados.length; i++) { marcados[i].checked = false; marcados[i].disabled = marcados[i].value === el('pessoa').value; }
+      mensagem('');
+    }
+
+    function horariosDaTela() {
+      var h = {};
+      dados.dias.forEach(function (d) { h[d.SIGLA + '_DE'] = el('de_' + d.SIGLA).value; h[d.SIGLA + '_ATE'] = el('ate_' + d.SIGLA).value; });
+      return h;
+    }
+
+    function salvar() {
+      var outros = [];
+      var marcados = document.querySelectorAll('.outro');
+      for (var i = 0; i < marcados.length; i++) { if (marcados[i].checked && !marcados[i].disabled) outros.push(marcados[i].value); }
+      if (outros.length && !window.confirm('Aplicar este horário a ' + (outros.length + 1) + ' funcionários? Isso substitui o horário atual de cada um.')) return;
+      el('salvar').disabled = true;
+      mensagem('Salvando...');
+      google.script.run
+        .withSuccessHandler(function (texto) { mensagem(texto, 'ok'); el('salvar').disabled = false; carregar(); })
+        .withFailureHandler(function (erro) { mensagem(erro && erro.message ? erro.message : String(erro), 'erro'); el('salvar').disabled = false; })
+        .executarOperacaoDeHorarioDoDialogo({ idFuncionario: el('pessoa').value, horarios: horariosDaTela(), aplicarA: outros });
+    }
+
+    function carregar(primeira) {
+      google.script.run
+        .withSuccessHandler(function (d) {
+          dados = d;
+          if (primeira) montarGrade();
+          preencherPessoas();
+          aoMudarPessoa();
+        })
+        .withFailureHandler(function (erro) { mensagem(erro && erro.message ? erro.message : String(erro), 'erro'); })
+        .obterDadosDoDialogoDeHorarios();
+    }
+
+    el('pessoa').addEventListener('change', aoMudarPessoa);
+    el('copiar').addEventListener('click', function () {
+      var de = el('de_' + dados.dias[0].SIGLA).value, ate = el('ate_' + dados.dias[0].SIGLA).value;
+      dados.dias.forEach(function (d) { el('de_' + d.SIGLA).value = de; el('ate_' + d.SIGLA).value = ate; });
+    });
+    el('limpar').addEventListener('click', function () {
+      dados.dias.forEach(function (d) { el('de_' + d.SIGLA).value = ''; el('ate_' + d.SIGLA).value = ''; });
+    });
+    el('salvar').addEventListener('click', salvar);
+    el('fechar').addEventListener('click', function () { google.script.host.close(); });
+    mensagem('Carregando...');
+    carregar(true);
+  </script>
+</body>
+</html>

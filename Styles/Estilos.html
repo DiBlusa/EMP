@@ -1,0 +1,58 @@
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* Mesma identidade visual de UI/DialogPresenca.html */
+  :root { --azul-escuro: #17365D; --azul-medio: #285A91; --azul-claro: #DCE8F5; --cinza-escuro: #343A40; --cinza-medio: #A7ADB4; --cinza-claro: #F1F3F5; --branco: #FFFFFF;
+          --verde: #2E7D32; --vermelho: #C0392B; --amarelo: #D99A00; --borda: #e1e5ea; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding-bottom: 96px; font-family: Roboto, Arial, sans-serif; font-size: 13px; color: var(--cinza-escuro); background: var(--cinza-claro); }
+
+  /* Topo */
+  .topo { background: var(--azul-escuro); color: var(--branco); padding: 12px 18px; }
+  .topo h1 { margin: 0; font-size: 18px; }
+  .topo small { color: var(--azul-claro); }
+
+  /* Barra de seleção principal (operação / funcionário) */
+  .barra { background: var(--branco); padding: 10px 18px 12px; border-bottom: 1px solid var(--borda); }
+  .barra label { margin-top: 0; }
+
+  /* Cartões de conteúdo */
+  .conteudo { padding: 12px 18px 0; }
+  .cartao { background: var(--branco); border-radius: 8px; padding: 4px 14px 14px; margin-bottom: 10px; border-left: 4px solid var(--azul-medio); }
+  .cartao h2 { margin: 10px 0 2px; font-size: 14px; color: var(--azul-escuro); }
+  .campo.oculto { display: none; }
+
+  /* Campos */
+  label { display: block; margin: 12px 0 4px; font-weight: bold; font-size: 12px; color: var(--azul-escuro); }
+  input[type=text], input[type=date], input[type=time], select, textarea {
+    width: 100%; padding: 7px 9px; border: 1px solid var(--cinza-medio); border-radius: 6px;
+    font-family: inherit; font-size: 13px; color: var(--cinza-escuro); background: var(--branco);
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--azul-medio); box-shadow: 0 0 0 3px var(--azul-claro); }
+  textarea { resize: vertical; min-height: 54px; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; min-width: 0; }
+  small { display: block; margin-top: 4px; font-size: 11px; color: #6c757d; line-height: 1.45; }
+  small:empty { display: none; }
+  .dica { margin-top: 10px; padding: 8px 12px; border-radius: 6px; background: var(--azul-claro); color: var(--azul-escuro); font-size: 12px; line-height: 1.45; }
+  .dica b { color: var(--azul-escuro); }
+
+  /* Ações secundárias em forma de link */
+  .acoes { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; }
+  .acoes button { border: 0; background: none; color: var(--azul-medio); cursor: pointer; padding: 4px 0; font-size: 12px; text-decoration: underline; }
+
+  /* Rodapé fixo com mensagem e botões */
+  .rodape { position: fixed; left: 0; right: 0; bottom: 0; background: var(--branco); border-top: 1px solid var(--borda); padding: 10px 18px;
+            display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .rodape .botoes { display: flex; gap: 8px; flex-shrink: 0; }
+  .rodape button { padding: 9px 18px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+  #msg { font-size: 12px; white-space: pre-line; max-height: 64px; overflow: auto; }
+  .erro { color: var(--vermelho); }
+  .ok { color: var(--verde); }
+  .p { background: var(--azul-medio); color: var(--branco); border: 0; }
+  .p:hover { background: var(--azul-escuro); }
+  .p:disabled { background: var(--cinza-medio); cursor: default; }
+  .s { background: var(--branco); color: var(--cinza-escuro); border: 1px solid var(--cinza-medio); }
+  .s:hover { background: var(--azul-claro); }
+
+  @media (max-width: 480px) { .row { flex-direction: column; gap: 0; } }
+</style>

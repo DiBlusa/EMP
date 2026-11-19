@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <?!= incluirArquivoHtml('Styles/Estilos') ?>
+  <style>
+    #dias { display: grid; grid-template-columns: minmax(110px, 34%) 1fr; gap: 6px 12px; align-items: center; margin-top: 10px; }
+    #dias label { margin: 0; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="topo"><h1>Distribuição do balcão</h1><small>Setor, posição e turnos de cada funcionário</small></div>
+
+  <div class="barra">
+    <label for="pessoa">Funcionário</label>
+    <select id="pessoa"></select>
+  </div>
+
+  <div class="conteudo">
+    <div class="cartao">
+      <div class="row">
+        <div><label for="setor">Setor</label><input type="text" id="setor" list="listaSetores"></div>
+        <div><label for="posicao">Posição no balcão</label><input type="text" id="posicao"></div>
+      </div>
+      <datalist id="listaSetores"></datalist>
+    </div>
+
+    <div class="cartao">
+      <h2>Turnos da semana</h2>
+      <small>Deixe o dia em branco quando a pessoa não estiver no balcão.</small>
+      <div class="dica" id="dicaVinculo" style="display:none"></div>
+      <div id="dias"></div>
+    </div>
+
+    <div class="cartao">
+      <label for="observacoes">Observações</label>
+      <textarea id="observacoes"></textarea>
+    </div>
+  </div>
+
+  <div class="rodape">
+    <div id="msg"></div>
+    <div class="botoes">
+      <button class="s" id="fechar">Fechar</button>
+      <button class="p" id="salvar">Salvar</button>
+    </div>
+  </div>
+
+  <script>
+    var dados = { dias: [], turnos: [], setores: [], pessoas: [], distribuicao: {}, turnosPorVinculo: {}, dicaPorVinculo: {} };
+
+    function el(id) { return document.getElementById(id); }
+    function limpar(no) { while (no.firstChild) no.removeChild(no.firstChild); }
+    function mensagem(texto, classe) { el('msg').textContent = texto; el('msg').className = classe || ''; }
+    function opcao(valor, texto) { var o = document.createElement('option'); o.value = valor; o.textContent = texto; return o; }
+
+    function montarDias() {
+      var c = el('dias');
+      limpar(c);
+      dados.dias.forEach(function (d) {
+        var r = document.createElement('label');
+        r.textContent = d.NOME;
+        r.setAttribute('for', 'dia_' + d.DISTRIBUICAO);
+        var s = document.createElement('select');
+        s.id = 'dia_' + d.DISTRIBUICAO;
+        c.appendChild(r);
+        c.appendChild(s);
+      });
+      limpar(el('listaSetores'));
+      dados.setores.forEach(function (s) { el('listaSetores').appendChild(opcao(s, s)); });
+    }
+
+    function preencherPessoas() {
+      var anterior = el('pessoa').value;
+      limpar(el('pessoa'));
+      dados.pessoas.forEach(function (p) { el('pessoa').appendChild(opcao(p.id, p.nome + ' — ' + p.id + (p.status === 'Ativo' ? '' : ' (' + p.status + ')'))); });
+      if (anterior) el('pessoa').value = anterior;
+    }
+
+    function pessoaAtual() {
+      var id = el('pessoa').value;
+      return dados.pessoas.filter(function (p) { return p.id === id; })[0] || null;
+    }
+
+    /** Só os turnos que valem para o vínculo da pessoa; um valor antigo fora da regra continua visível para ser trocado. */
+    function preencherTurnos(dia, valorAtual) {
+      var s = el('dia_' + dia.DISTRIBUICAO);
+      var p = pessoaAtual();
+      var permitidos = (p && dados.turnosPorVinculo[p.vinculo]) || dados.turnos;
+      limpar(s);
+      s.appendChild(opcao('', '(não está no balcão)'));
+      permitidos.forEach(function (t) { s.appendChild(opcao(t, t)); });
+      if (valorAtual && permitidos.indexOf(valorAtual) < 0) s.appendChild(opcao(valorAtual, valorAtual + ' (não vale para ' + (p ? p.vinculo : '') + ')'));
+      s.value = valorAtual || '';
+    }
+
+    function aoMudarPessoa() {
+      var p = pessoaAtual();
+      var dica = p ? dados.dicaPorVinculo[p.vinculo] : '';
+      el('dicaVinculo').textContent = dica ? p.vinculo + ' — ' + dica : '';
+      el('dicaVinculo').style.display = dica ? 'block' : 'none';
+      var d = dados.distribuicao[el('pessoa').value] || {};
+      el('setor').value = d.SETOR || '';
+      el('posicao').value = d.POSICAO || '';
+      el('observacoes').value = d.OBSERVACOES || '';
+      dados.dias.forEach(function (dia) { preencherTurnos(dia, d[dia.DISTRIBUICAO] || ''); });
+      mensagem('');
+    }
+
+    function salvar() {
+      var campos = { SETOR: el('setor').value, POSICAO: el('posicao').value, OBSERVACOES: el('observacoes').value };
+      dados.dias.forEach(function (dia) { campos[dia.DISTRIBUICAO] = el('dia_' + dia.DISTRIBUICAO).value; });
+      el('salvar').disabled = true;
+      mensagem('Salvando...');
+      google.script.run
+        .withSuccessHandler(function (texto) { mensagem(texto, 'ok'); el('salvar').disabled = false; carregar(); })
+        .withFailureHandler(function (erro) { mensagem(erro && erro.message ? erro.message : String(erro), 'erro'); el('salvar').disabled = false; })
+        .executarOperacaoDeDistribuicaoDoDialogo({ idFuncionario: el('pessoa').value, dados: campos });
+    }
+
+    function carregar(primeira) {
+      google.script.run
+        .withSuccessHandler(function (d) {
+          dados = d;
+          if (primeira) montarDias();
+          preencherPessoas();
+          aoMudarPessoa();
+        })
+        .withFailureHandler(function (erro) { mensagem(erro && erro.message ? erro.message : String(erro), 'erro'); })
+        .obterDadosDoDialogoDeDistribuicao();
+    }
+
+    el('pessoa').addEventListener('change', aoMudarPessoa);
+    el('salvar').addEventListener('click', salvar);
+    el('fechar').addEventListener('click', function () { google.script.host.close(); });
+    mensagem('Carregando...');
+    carregar(true);
+  </script>
+</body>
+</html>
